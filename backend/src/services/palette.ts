@@ -26,9 +26,9 @@ export async function extractColorPalette(
     const originalWidth = metadata.width || 400;
     const originalHeight = metadata.height || 400;
     
-    // Calculate center crop dimensions (50% zoom = center 50% of image)
-    const cropWidth = Math.floor(originalWidth * 0.5);
-    const cropHeight = Math.floor(originalHeight * 0.5);
+    // Calculate center crop dimensions (75% zoom = center 75% of image)
+    const cropWidth = Math.floor(originalWidth * 0.75);
+    const cropHeight = Math.floor(originalHeight * 0.75);
     const left = Math.floor((originalWidth - cropWidth) / 2);
     const top = Math.floor((originalHeight - cropHeight) / 2);
 

@@ -1,7 +1,7 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { Upload, Loader2 } from 'lucide-react';
 import { useImageStore } from '@/stores/imageStore';
-import { uploadFiles, processPalettes } from '@/lib/api';
+import { uploadFiles, uploadZipFile, processPalettes } from '@/lib/api';
 
 export function UploadArea() {
   const [isDragOver, setIsDragOver] = useState(false);
@@ -11,12 +11,35 @@ export function UploadArea() {
   const [totalFiles, setTotalFiles] = useState(0);
   const [uploadStart, setUploadStart] = useState<number | null>(null);
   const [estimatedSeconds, setEstimatedSeconds] = useState(0);
+  const [isExtractingZip, setIsExtractingZip] = useState(false);
 
   // No SSE setup here; global hook handles it
+
+  // Helper function to check if a file is a ZIP file
+  const isZipFile = (file: File): boolean => {
+    return file.type === 'application/zip' || 
+           file.type === 'application/x-zip-compressed' ||
+           file.name.toLowerCase().endsWith('.zip');
+  };
 
   const handleFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
 
+    // Check if there's a single ZIP file
+    const zipFiles = files.filter(isZipFile);
+    const imageFiles = files.filter(file => !isZipFile(file));
+
+    if (zipFiles.length === 1 && imageFiles.length === 0) {
+      // Handle single ZIP file
+      await handleZipFile(zipFiles[0]);
+      return;
+    } else if (zipFiles.length > 0) {
+      // Mixed files - show error
+      alert('Please upload either ZIP files individually or image files together, but not both at the same time.');
+      return;
+    }
+
+    // Handle regular image files
     setIsUploading(true);
     setTotalFiles(files.length);
     setUploadStart(Date.now());
@@ -55,6 +78,58 @@ export function UploadArea() {
       console.error('Error during upload/processing:', error);
       alert('Failed to upload or process files. Please try again.');
       setIsUploading(false);
+      setIsProcessingPalettes(false);
+    }
+  }, [refreshImages]);
+
+  const handleZipFile = useCallback(async (zipFile: File) => {
+    setIsUploading(true);
+    setIsExtractingZip(true);
+    setTotalFiles(1);
+    setUploadStart(Date.now());
+    
+    // Estimate extraction time based on file size (roughly 1MB per second)
+    const est = Math.max(5, Math.ceil(zipFile.size / (1024 * 1024)));
+    setEstimatedSeconds(est);
+
+    try {
+      console.log(`📦 Uploading and extracting ZIP file: ${zipFile.name} (${zipFile.size} bytes)`);
+      
+      // Step 1: Upload and extract ZIP file
+      const result = await uploadZipFile(zipFile);
+      console.log(`✅ ZIP extraction complete: ${result.images.length} images extracted`);
+      
+      // Step 2: Refresh to show extracted files
+      await refreshImages();
+      
+      // Step 3: Start palette processing (non-blocking)
+      setIsUploading(false);
+      setIsExtractingZip(false);
+      setIsProcessingPalettes(true);
+      
+      console.log('🎨 Starting palette processing...');
+      
+      // Start palette processing but don't wait for it
+      // The SSE connection will handle real-time updates
+      processPalettes()
+        .then(() => {
+          console.log('✅ Palette processing complete');
+          setIsProcessingPalettes(false);
+        })
+        .catch((error) => {
+          console.error('Error during palette processing:', error);
+          setIsProcessingPalettes(false);
+        });
+      
+    } catch (error) {
+      console.error('Error during ZIP processing:', error);
+      let errorMessage = 'Failed to process ZIP file. Please try again.';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      alert(errorMessage);
+      setIsUploading(false);
+      setIsExtractingZip(false);
       setIsProcessingPalettes(false);
     }
   }, [refreshImages]);
@@ -119,7 +194,7 @@ export function UploadArea() {
           id="file-upload"
           type="file"
           multiple
-          accept="image/*"
+          accept="image/*,.zip"
           className="hidden"
           onChange={handleFileSelect}
           disabled={isProcessing}
@@ -145,10 +220,13 @@ export function UploadArea() {
             <>
               <div>
                 <h3 className="text-2xl font-semibold text-foreground mb-2">
-                  Uploading Files...
+                  {isExtractingZip ? 'Extracting ZIP Archive...' : 'Uploading Files...'}
                 </h3>
                 <p className="text-muted-foreground">
-                  Saving files and creating thumbnails
+                  {isExtractingZip 
+                    ? 'Extracting images from ZIP file and creating thumbnails'
+                    : 'Saving files and creating thumbnails'
+                  }
                 </p>
                 <p className="text-sm text-primary">
                   Est. {estimatedSeconds}s remaining
@@ -170,15 +248,15 @@ export function UploadArea() {
             <>
               <div>
                 <h3 className="text-2xl font-semibold text-foreground mb-2">
-                  Drop images here or click to browse
+                  Drop images or ZIP files here, or click to browse
                 </h3>
                 <p className="text-muted-foreground text-lg">
-                  Supports JPEG, PNG, and HEIC formats
+                  Supports JPEG, PNG, HEIC formats and ZIP archives
                 </p>
               </div>
               
               {/* Feature highlights */}
-              <div className="flex items-center justify-center gap-8 text-sm text-muted-foreground">
+              <div className="flex items-center justify-center gap-6 text-sm text-muted-foreground flex-wrap">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                   <span>Auto-extract color palettes</span>
@@ -190,6 +268,10 @@ export function UploadArea() {
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-purple-500"></div>
                   <span>Group similar images</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                  <span>Extract ZIP archives</span>
                 </div>
               </div>
             </>

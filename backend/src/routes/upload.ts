@@ -9,8 +9,15 @@ import mime from 'mime-types';
 import ExifReader from 'exifreader';
 import { prisma } from '../index';
 import { extractColorPalette } from '../services/palette';
+import { extractTextFromImage } from '../services/gemini';
+import { extractImagesFromZip, isValidZipFile, getExtractionEstimate } from '../services/zipExtractor';
+import pLimit from 'p-limit';
 
 const router = express.Router();
+
+// Rate limiting for parallel processing
+const paletteLimit = pLimit(100); // Same as before
+const geminiLimit = pLimit(20); // 20 concurrent Gemini requests
 
 // Use OS temp directory + app-specific folder to avoid bloating codebase
 const TEMP_DIR = path.join(os.tmpdir(), 'ocr-auto-label');
@@ -25,12 +32,12 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Accept JPEG, PNG, HEIC formats
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/heic', 'image/heif'];
+    // Accept JPEG, PNG, HEIC formats and ZIP files
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'application/zip', 'application/x-zip-compressed'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only JPEG, PNG, and HEIC files are allowed.'));
+      cb(new Error('Invalid file type. Only JPEG, PNG, HEIC, and ZIP files are allowed.'));
     }
   },
 });
@@ -249,6 +256,10 @@ router.post('/', upload.array('files'), async (req, res) => {
 
     console.log(`✅ Successfully uploaded ${uploadedImages.length} files`);
 
+    // Start parallel processing after successful upload
+    console.log('🚀 Starting parallel processing (palette + Gemini)...');
+    startParallelProcessing(uploadedImages.map(img => img.id));
+
     res.json({
       message: `Successfully uploaded ${uploadedImages.length} of ${req.files.length} files`,
       images: uploadedImages,
@@ -407,6 +418,166 @@ async function cleanupOldData() {
   }
 }
 
+// Generate smart filename based on group and existing files
+async function generateSmartFilename(group: string, currentImageId: string, originalName: string): Promise<string> {
+  const fileExtension = path.extname(originalName);
+  
+  // Get all images in this group (excluding current image)
+  const existingImages = await prisma.image.findMany({
+    where: { 
+      group: group,
+      id: { not: currentImageId }
+    },
+    orderBy: { createdAt: 'asc' }
+  });
+  
+  // Check if there's already an image with extracted code in this group
+  const hasImageWithCode = existingImages.some(img => !!img.code);
+  
+  if (existingImages.length === 0) {
+    // First image in group - use GROUP.ext
+    return `${group}${fileExtension}`;
+  } else if (hasImageWithCode) {
+    // Group already has an image with extracted code - use GROUP_X.ext
+    return `${group}_${existingImages.length + 1}${fileExtension}`;
+  } else {
+    // Current image would be first with extracted code - use GROUP.ext
+    return `${group}${fileExtension}`;
+  }
+}
+
+// Start parallel processing for palette extraction and Gemini OCR
+async function startParallelProcessing(imageIds: string[]) {
+  console.log(`🚀 Starting parallel processing for ${imageIds.length} images...`);
+  
+  // Process all images in parallel - both palette and Gemini
+  const processingPromises = imageIds.map(imageId => {
+    return Promise.all([
+      paletteLimit(() => processPaletteForImage(imageId)),
+      geminiLimit(() => processGeminiForImage(imageId))
+    ]);
+  });
+
+  try {
+    await Promise.all(processingPromises);
+    console.log('✅ All parallel processing completed');
+  } catch (error) {
+    console.error('❌ Error in parallel processing:', error);
+  }
+}
+
+// Process Gemini OCR for a specific image
+export async function processGeminiForImage(imageId: string): Promise<void> {
+  try {
+    // Get image from database
+    const image = await prisma.image.findUnique({
+      where: { id: imageId }
+    });
+
+    if (!image) {
+      console.error(`Image ${imageId} not found`);
+      return;
+    }
+
+    // Update status to processing
+    await prisma.image.update({
+      where: { id: imageId },
+      data: { geminiStatus: 'processing' }
+    });
+
+    // Broadcast processing status update
+    broadcastGeminiUpdate(imageId, { geminiStatus: 'processing' });
+
+    console.log(`🧠 Processing Gemini OCR for ${image.originalName}...`);
+
+    // Extract text using Gemini
+    const geminiResult = await extractTextFromImage(image.filePath);
+
+    // Determine group assignment and file naming
+    let newName = image.newName || ''; // Keep blank if no name was previously set
+    let group = image.group || ''; // Keep existing group if it exists
+    let groupingStatus = image.groupingStatus;
+    let groupingConfidence = image.groupingConfidence;
+    
+    if (geminiResult.code && !image.group) {
+      // Only auto-assign group if one doesn't exist already
+      group = geminiResult.code;
+      groupingStatus = 'complete';
+      groupingConfidence = 1.0;
+      
+      // Generate new filename using the smart naming logic
+      newName = await generateSmartFilename(group, imageId, image.originalName);
+    }
+
+    // Update database with results
+    await prisma.image.update({
+      where: { id: imageId },
+      data: {
+        geminiStatus: 'complete',
+        code: geminiResult.code,
+        otherText: geminiResult.otherText,
+        objectDesc: geminiResult.objectDesc,
+        geminiConfidence: geminiResult.confidence,
+        newName: newName,
+        group: group,
+        groupingStatus: groupingStatus,
+        groupingConfidence: groupingConfidence,
+      }
+    });
+
+    // Broadcast completion update
+    broadcastGeminiUpdate(imageId, {
+      geminiStatus: 'complete',
+      code: geminiResult.code,
+      otherText: geminiResult.otherText,
+      objectDesc: geminiResult.objectDesc,
+      geminiConfidence: geminiResult.confidence,
+      newName: newName,
+      group: group,
+      groupingStatus: groupingStatus,
+      groupingConfidence: groupingConfidence,
+    });
+
+    console.log(`✅ Gemini OCR completed for ${image.originalName} - Code: ${geminiResult.code || 'none'}`);
+
+  } catch (error) {
+    console.error(`Failed to process Gemini OCR for image ${imageId}:`, error);
+    
+    // Update status to error
+    await prisma.image.update({
+      where: { id: imageId },
+      data: { geminiStatus: 'error' }
+    });
+
+    // Broadcast error update
+    broadcastGeminiUpdate(imageId, { geminiStatus: 'error' });
+  }
+}
+
+// Function to broadcast Gemini updates to all connected clients
+function broadcastGeminiUpdate(imageId: string, updates: any) {
+  const data = JSON.stringify({
+    type: 'gemini_update',
+    imageId,
+    updates
+  });
+
+  sseClients.forEach((client) => {
+    try {
+      client.write(`data: ${data}\n\n`);
+      if (client.flush) {
+        try {
+          client.flush();
+        } catch (_) {
+          // Ignore flush errors
+        }
+      }
+    } catch (error) {
+      // Client disconnected, will be cleaned up by event handlers
+    }
+  });
+}
+
 // POST /api/upload/cleanup - Manual cleanup endpoint
 router.post('/cleanup', async (req, res) => {
   try {
@@ -445,6 +616,10 @@ router.post('/folder', upload.array('files'), async (req, res) => {
 
     console.log(`✅ Successfully processed ${uploadedImages.length} files from folder`);
 
+    // Start parallel processing after successful upload
+    console.log('🚀 Starting parallel processing (palette + Gemini)...');
+    startParallelProcessing(uploadedImages.map(img => img.id));
+
     res.json({
       message: `Successfully uploaded ${uploadedImages.length} of ${req.files.length} files`,
       images: uploadedImages,
@@ -456,8 +631,8 @@ router.post('/folder', upload.array('files'), async (req, res) => {
   }
 });
 
-// GET /api/upload/palette-progress - Server-Sent Events for real-time palette updates
-router.get('/palette-progress', (req, res) => {
+// GET /api/upload/progress - Server-Sent Events for real-time processing updates (palette + Gemini)
+router.get('/progress', (req, res) => {
   // Set up SSE headers
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -482,6 +657,100 @@ router.get('/palette-progress', (req, res) => {
   req.on('aborted', () => {
     sseClients.delete(clientId);
   });
+});
+
+// POST /api/upload/zip - Handle ZIP file upload and extract images
+router.post('/zip', upload.single('file'), async (req, res) => {
+  try {
+    await ensureDirectories();
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No ZIP file uploaded' });
+    }
+
+    console.log(`📦 Processing ZIP file: ${req.file.originalname} (${req.file.size} bytes)`);
+
+    // Validate that it's actually a ZIP file
+    if (!isValidZipFile(req.file.buffer)) {
+      return res.status(400).json({ error: 'Invalid ZIP file format' });
+    }
+
+    // Clean up old data before processing new uploads
+    console.log('🧹 Cleaning up old data...');
+    await cleanupOldData();
+
+    // Get extraction time estimate
+    const estimatedSeconds = getExtractionEstimate(req.file.size);
+    console.log(`📊 Estimated extraction time: ${estimatedSeconds} seconds`);
+
+    // Extract images from ZIP
+    console.log('📦 Extracting images from ZIP file...');
+    const extractedFiles = await extractImagesFromZip(req.file.buffer);
+
+    if (extractedFiles.length === 0) {
+      return res.status(400).json({ error: 'No supported image files found in ZIP archive' });
+    }
+
+    console.log(`📸 Found ${extractedFiles.length} images in ZIP file`);
+
+    // Process extracted images - create mock Express.Multer.File objects
+    const uploadPromises = extractedFiles.map(async (extractedFile) => {
+      // Create a mock multer file object from the extracted data
+      const mockFile: Express.Multer.File = {
+        fieldname: 'files',
+        originalname: extractedFile.filename,
+        encoding: '7bit',
+        mimetype: 'image/jpeg', // Will be corrected by mime detection
+        size: extractedFile.buffer.length,
+        buffer: extractedFile.buffer,
+        destination: '',
+        filename: '',
+        path: '',
+        stream: null as any
+      };
+
+      // Use the existing saveFileOnly function but pass the relative path for organization
+      return await saveFileOnly(
+        mockFile, 
+        extractedFile.relativePath, // Use full relative path from ZIP
+        extractedFile.lastModified.getTime()
+      );
+    });
+
+    const uploadedImages = await Promise.all(uploadPromises);
+
+    // Sort by timestamp for chronological order
+    uploadedImages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    console.log(`✅ Successfully extracted and processed ${uploadedImages.length} images from ZIP`);
+
+    // Start parallel processing after successful upload
+    console.log('🚀 Starting parallel processing (palette + Gemini)...');
+    startParallelProcessing(uploadedImages.map(img => img.id));
+
+    res.json({
+      message: `Successfully extracted ${uploadedImages.length} images from ZIP file`,
+      images: uploadedImages,
+      extractionTime: estimatedSeconds
+    });
+
+  } catch (error) {
+    console.error('ZIP upload error:', error);
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to process ZIP file';
+    if (error instanceof Error) {
+      if (error.message.includes('Invalid ZIP file')) {
+        errorMessage = 'Invalid or corrupted ZIP file';
+      } else if (error.message.includes('No images found')) {
+        errorMessage = 'No supported image files found in ZIP archive';
+      } else {
+        errorMessage = `ZIP processing failed: ${error.message}`;
+      }
+    }
+    
+    res.status(500).json({ error: errorMessage });
+  }
 });
 
 // Store active SSE connections

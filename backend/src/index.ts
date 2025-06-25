@@ -1,3 +1,4 @@
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -6,6 +7,9 @@ import compression from 'compression';
 import path from 'path';
 import os from 'os';
 import { PrismaClient } from '@prisma/client';
+
+// Load environment variables from .env file
+dotenv.config();
 
 // Import routes
 import imageRoutes from './routes/images';
@@ -151,6 +155,10 @@ app.listen(PORT, () => {
 });
 
 // Add cleanup function for development
+export function cleanupTempFiles() {
+  console.log(`🧹 Cleaning up temp files in: ${TEMP_DIR}`);
+  // This will be called on graceful shutdown
+} 
 export function cleanupTempFiles() {
   console.log(`🧹 Cleaning up temp files in: ${TEMP_DIR}`);
   // This will be called on graceful shutdown

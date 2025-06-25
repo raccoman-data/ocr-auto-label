@@ -102,7 +102,7 @@ export interface FileWithMetadata extends File {
   relativePath?: string;
 }
 
-// Drag and drop state
+// File drag and drop state for upload area
 export interface DragState {
   isDragging: boolean;
   draggedOver: boolean;

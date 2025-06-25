@@ -54,6 +54,27 @@ export async function uploadFiles(
   return response.json();
 }
 
+// Upload a ZIP file and extract images
+export async function uploadZipFile(
+  zipFile: File
+): Promise<UploadResponse> {
+  const formData = new FormData();
+  formData.append('file', zipFile);
+
+  const response = await fetch(`${API_BASE_URL}/upload/zip`, {
+    method: 'POST',
+    body: formData,
+    // Don't set Content-Type header - let browser set it with boundary for multipart/form-data
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `ZIP upload failed with status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 // Get all images with pagination and filtering
 export async function getImages(params: {
   page?: number;

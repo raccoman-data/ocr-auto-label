@@ -29,7 +29,7 @@ interface ImageStore {
   // Selection state
   selection: SelectionState;
   
-  // Drag and drop state
+  // File upload drag state
   dragState: DragState;
   
   // Sidebar state
@@ -59,7 +59,7 @@ interface ImageStore {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   
-  // Drag and drop actions
+  // File upload drag actions
   setDragState: (state: Partial<DragState>) => void;
   resetDragState: () => void;
   
@@ -92,6 +92,8 @@ const initialDragState: DragState = {
   draggedOver: false,
   files: [],
 };
+
+
 
 const initialSelection: SelectionState = {
   selectedIds: new Set(),
@@ -201,12 +203,14 @@ export const useImageStore = create<ImageStore>()(
       setLoading: (isLoading) => set({ isLoading }),
       setError: (error) => set({ error }),
       
-      // Drag and drop actions
+      // File upload drag actions
       setDragState: (updates) => set((state) => ({
         dragState: { ...state.dragState, ...updates }
       })),
       
       resetDragState: () => set({ dragState: initialDragState }),
+      
+
       
       // Sidebar actions
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),

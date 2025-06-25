@@ -10,6 +10,7 @@ interface StatusIconsProps {
   paletteConfidence?: number;
   geminiConfidence?: number;
   groupingConfidence?: number;
+  hasCode?: boolean; // Whether Gemini found a sample code
 }
 
 export function StatusIcons({ 
@@ -18,14 +19,16 @@ export function StatusIcons({
   groupingStatus,
   paletteConfidence,
   geminiConfidence,
-  groupingConfidence
+  groupingConfidence,
+  hasCode
 }: StatusIconsProps) {
   
   const getStatusIcon = (
     status: ProcessingStatus, 
     Icon: React.ComponentType<any>, 
     label: string,
-    confidence?: number
+    confidence?: number,
+    isGemini: boolean = false
   ) => {
     const baseClasses = "w-5 h-5 transition-all duration-200";
     const confidenceText = confidence ? ` (${(confidence * 100).toFixed(1)}%)` : '';
@@ -34,16 +37,27 @@ export function StatusIcons({
       case 'pending':
         return (
           <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted" title={`${label}: Pending${confidenceText}`}>
-            <Icon className={cn(baseClasses, "text-muted-foreground/40")} />
+            <Icon className={cn(baseClasses, isGemini ? "text-yellow-500" : "text-muted-foreground/40")} />
           </div>
         );
       case 'processing':
         return (
           <div className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 animate-pulse" title={`${label}: Processing${confidenceText}`}>
-            <Icon className={cn(baseClasses, "text-amber-600")} />
+            <Icon className={cn(baseClasses, isGemini ? "text-yellow-600" : "text-amber-600")} />
           </div>
         );
       case 'complete':
+        // For Gemini: green if code found, blue if no code found
+        if (isGemini) {
+          const bgColor = hasCode ? "bg-emerald-100" : "bg-blue-100";
+          const iconColor = hasCode ? "text-emerald-600" : "text-blue-600";
+          const statusText = hasCode ? "Code Found" : "No Code Found";
+          return (
+            <div className={`flex items-center justify-center w-7 h-7 rounded-full ${bgColor}`} title={`${label}: ${statusText}${confidenceText}`}>
+              <Icon className={cn(baseClasses, iconColor)} />
+            </div>
+          );
+        }
         return (
           <div className="flex items-center justify-center w-7 h-7 rounded-full bg-emerald-100" title={`${label}: Complete${confidenceText}`}>
             <Icon className={cn(baseClasses, "text-emerald-600")} />
@@ -70,7 +84,7 @@ export function StatusIcons({
       {getStatusIcon(paletteStatus, Palette, 'Color Palette', paletteConfidence)}
       
       {/* Gemini Status */}
-      {getStatusIcon(geminiStatus, Brain, 'Code Detection', geminiConfidence)}
+      {getStatusIcon(geminiStatus, Brain, 'Code Detection', geminiConfidence, true)}
       
       {/* Grouping Status */}
       {getStatusIcon(groupingStatus, Link2, 'Grouping', groupingConfidence)}

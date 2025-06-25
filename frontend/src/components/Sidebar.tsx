@@ -1,10 +1,110 @@
-import React from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useImageStore } from '@/stores/imageStore';
-import { formatFileSize, formatTimestamp } from '@/lib/utils';
+import { formatFileSize, formatTimestamp, cn } from '@/lib/utils';
 import { StatusIcons } from '@/components/ImageTable/StatusIcons';
+import { GroupEditor } from '@/components/GroupEditor';
+import { InlineNameEditor } from '@/components/InlineNameEditor';
+import { Button } from '@/components/ui/button';
+import { RefreshCw, Copy, Check } from 'lucide-react';
 
 export function Sidebar() {
-  const { selectedImage } = useImageStore();
+  const { selectedImage, images, updateImage } = useImageStore();
+  const [showZoom, setShowZoom] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [copyFeedback, setCopyFeedback] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoomLevel(prev => Math.max(0.5, Math.min(5, prev * delta)));
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  }, [position]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setPosition({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    });
+  }, [isDragging, dragStart]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    setZoomLevel(1);
+    setPosition({ x: 0, y: 0 });
+  }, []);
+
+  // Handle escape key to close zoom
+  React.useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showZoom) {
+        setShowZoom(false);
+        setZoomLevel(1);
+        setPosition({ x: 0, y: 0 });
+      }
+    };
+
+    if (showZoom) {
+      document.addEventListener('keydown', handleEscape);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showZoom]);
+
+  // Get all unique groups for the combobox
+  const getAllGroups = () => {
+    const groups = new Set<string>();
+    images.forEach(image => {
+      if (image.group && image.group.trim()) {
+        groups.add(image.group);
+      }
+    });
+    return Array.from(groups).sort();
+  };
+
+  // Handle name updates
+  const handleNameUpdate = async (newName: string) => {
+    if (!selectedImage) return;
+    
+    try {
+      // Optimistic update
+      updateImage(selectedImage.id, { newName });
+
+      // Send to backend
+      const response = await fetch(`/api/images/${selectedImage.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ newName }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update image name');
+      }
+
+      const updatedImage = await response.json();
+      // Update with server response
+      updateImage(selectedImage.id, updatedImage);
+    } catch (error) {
+      console.error('Error updating image name:', error);
+      // Revert optimistic update
+      updateImage(selectedImage.id, { newName: selectedImage.newName });
+    }
+  };
 
   if (!selectedImage) {
     return (
@@ -46,13 +146,66 @@ export function Sidebar() {
       <div className="p-4 border-b border-border">
         {imageUrl ? (
           <div className="space-y-2">
-            <img
-              src={imageUrl}
-              alt={selectedImage.originalName}
-              className="w-full h-auto object-contain rounded-lg border shadow-sm"
-              onError={handleImageError}
-              style={{ maxHeight: 'none', imageRendering: 'crisp-edges' }}
-            />
+            <div className="relative">
+              <img
+                src={imageUrl}
+                alt={selectedImage.originalName}
+                className="w-full h-auto object-contain rounded-lg border shadow-sm cursor-zoom-in"
+                onError={handleImageError}
+                onClick={() => setShowZoom(true)}
+                style={{ maxHeight: 'none', imageRendering: 'crisp-edges' }}
+              />
+              
+              {/* Custom zoom overlay */}
+              {showZoom && (
+                <div 
+                  className="fixed inset-0 bg-black bg-opacity-90 z-50"
+                >
+                  <div className="relative w-full h-full p-4 overflow-hidden">
+                    <button
+                      onClick={() => setShowZoom(false)}
+                      className="absolute top-4 right-4 z-10 text-white hover:text-gray-300 text-2xl font-bold"
+                    >
+                      ×
+                    </button>
+                    
+                    <div className="absolute top-4 left-4 z-10 text-white text-sm bg-black bg-opacity-50 px-2 py-1 rounded">
+                      Zoom: {Math.round(zoomLevel * 100)}% | Scroll to zoom, drag to pan
+                    </div>
+
+                    <div 
+                      className="w-full h-full flex items-center justify-center overflow-hidden"
+                      onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                          setShowZoom(false);
+                          setZoomLevel(1);
+                          setPosition({ x: 0, y: 0 });
+                        }
+                      }}
+                      onWheel={handleWheel}
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                    >
+                      <img
+                        ref={imgRef}
+                        src={imageUrl}
+                        alt={selectedImage.originalName}
+                        className="select-none"
+                        onDoubleClick={resetZoom}
+                        style={{
+                          transform: `scale(${zoomLevel}) translate(${position.x / zoomLevel}px, ${position.y / zoomLevel}px)`,
+                          imageRendering: 'crisp-edges',
+                          transition: isDragging ? 'none' : 'transform 0.1s ease-out'
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             {/* Compact file info right under image */}
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>{formatFileSize(selectedImage.fileSize)}</span>
@@ -73,15 +226,18 @@ export function Sidebar() {
       {/* Metadata */}
       <div className="flex-1 p-4 space-y-4 overflow-y-auto sidebar-scrollbar">
         {/* Names - more compact */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-foreground mb-1 block">New Name</label>
-            <div className="p-2 bg-muted/50 rounded text-xs border">
-              {selectedImage.newName || (
-                <span className="italic text-muted-foreground">
-                  {selectedImage.code || 'Not set'}
-                </span>
-              )}
+            <div className="p-2 bg-muted/50 rounded border min-h-[2rem] flex items-center">
+              <InlineNameEditor
+                currentName={selectedImage.newName || selectedImage.code || ''}
+                placeholder={selectedImage.code || 'Unnamed'}
+                originalName={selectedImage.originalName}
+                onSave={handleNameUpdate}
+                variant="sidebar"
+                className="w-full"
+              />
             </div>
           </div>
 
@@ -93,31 +249,60 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Group */}
+        {/* Group - Editable */}
         <div>
           <label className="text-xs font-semibold text-foreground mb-1 block">Group</label>
-          <div className="p-2 bg-muted/50 rounded text-xs border flex items-center">
-            {selectedImage.group ? (
-              <span 
-                className="px-2 py-1 text-primary rounded-full text-xs font-medium"
-                style={{ backgroundColor: 'hsl(var(--primary) / 0.1)' }}
-              >
-                {selectedImage.group}
-              </span>
-            ) : (
-              <span className="italic text-muted-foreground">No group assigned</span>
-            )}
-          </div>
+          <GroupEditor 
+            imageId={selectedImage.id}
+            currentGroup={selectedImage.group || ''}
+            allGroups={getAllGroups()}
+          />
         </div>
 
         {/* Extracted Data - more compact */}
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-semibold text-foreground mb-1 block">Sample Code</label>
-            <div className="p-2 bg-muted/50 rounded text-xs border font-mono">
-              {selectedImage.code || (
-                <span className="italic text-muted-foreground">Not detected</span>
+            <label className="text-xs font-semibold text-foreground mb-1 block">Extracted Code</label>
+            <div 
+              className={cn(
+                "p-2 bg-muted/50 rounded text-xs border font-mono transition-all relative",
+                selectedImage.code 
+                  ? "cursor-pointer hover:bg-muted/70 hover:border-primary/30 group" 
+                  : "cursor-default",
+                copyFeedback && "bg-emerald-50 border-emerald-200"
               )}
+              onClick={async () => {
+                if (selectedImage.code) {
+                  try {
+                    await navigator.clipboard.writeText(selectedImage.code);
+                    setCopyFeedback(true);
+                    setTimeout(() => setCopyFeedback(false), 1500);
+                  } catch (err) {
+                    console.error('Failed to copy code:', err);
+                  }
+                }
+              }}
+              title={selectedImage.code ? "Click to copy code" : undefined}
+            >
+              <div className="flex items-center justify-between">
+                <span>
+                  {selectedImage.code || (
+                    <span className="italic text-muted-foreground">Not detected</span>
+                  )}
+                </span>
+                {selectedImage.code && (
+                  <div className="ml-2 flex items-center">
+                    {copyFeedback ? (
+                      <div className="flex items-center gap-1 text-emerald-600">
+                        <Check className="w-3 h-3" />
+                        <span className="text-xs">Copied!</span>
+                      </div>
+                    ) : (
+                      <Copy className="w-3 h-3 text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -143,7 +328,7 @@ export function Sidebar() {
         {/* Color Palette - smaller and more compact */}
         <div>
           <label className="text-xs font-semibold text-foreground mb-2 block">Color Palette</label>
-          {selectedImage.palette && selectedImage.palette.length > 0 ? (
+          {selectedImage.palette && Array.isArray(selectedImage.palette) && selectedImage.palette.length > 0 ? (
             <div className="flex gap-1">
               {selectedImage.palette.map((color, index) => {
                 const tooltipText = `${color.name || 'Color'}: ${color.color} (${color.percentage || 0}%)`;
@@ -186,7 +371,34 @@ export function Sidebar() {
               paletteConfidence={selectedImage.paletteConfidence}
               geminiConfidence={selectedImage.geminiConfidence}
               groupingConfidence={selectedImage.groupingConfidence}
+              hasCode={!!selectedImage.code}
             />
+          </div>
+          {/* Retry Gemini button */}
+          <div className="mt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              disabled={selectedImage.geminiStatus === 'processing'}
+              onClick={async () => {
+                try {
+                  // Optimistic UI update
+                  updateImage(selectedImage.id, { geminiStatus: 'processing', geminiConfidence: 0 });
+
+                  const res = await fetch(`/api/images/${selectedImage.id}/rerun-gemini`, {
+                    method: 'POST'
+                  });
+                  if (!res.ok) throw new Error('Failed to trigger Gemini');
+                } catch (err) {
+                  console.error(err);
+                  // revert
+                  updateImage(selectedImage.id, { geminiStatus: 'error' });
+                }
+              }}
+            >
+              <RefreshCw className="w-3 h-3" /> Retry Gemini
+            </Button>
           </div>
         </div>
       </div>

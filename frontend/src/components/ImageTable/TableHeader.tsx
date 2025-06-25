@@ -31,7 +31,7 @@ export function TableHeader() {
   };
 
   return (
-    <div className="h-12 border-b border-border bg-muted/20 flex items-center text-xs font-semibold text-muted-foreground tracking-wide">
+    <div className="h-12 border-b border-border bg-card sticky top-0 z-20 flex items-center text-xs font-semibold text-muted-foreground tracking-wide">
       {/* Preview Column */}
       <div className="w-20 linear-cell">
         Preview
@@ -41,17 +41,17 @@ export function TableHeader() {
       <div className="w-4 linear-cell"></div>
       
       {/* Original Name Column */}
-      <div className="flex-1 linear-cell min-w-[12rem]">
+      <div className="w-48 linear-cell min-w-[10rem]">
         <SortButton field="originalName">Original Name</SortButton>
       </div>
       
       {/* New Name Column */}
-      <div className="flex-1 linear-cell min-w-[12rem] -ml-2">
+      <div className="flex-1 linear-cell min-w-[16rem] -ml-4">
         <SortButton field="newName">New Name</SortButton>
       </div>
       
       {/* Group Column */}
-      <div className="w-48 linear-cell -ml-2">
+      <div className="w-56 linear-cell -ml-2 -mr-2">
         <SortButton field="group">Group</SortButton>
       </div>
       

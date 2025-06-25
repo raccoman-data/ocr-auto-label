@@ -6,12 +6,12 @@ export function usePaletteUpdates() {
   const { updateImage } = useImageStore();
 
   useEffect(() => {
-    // Connect to SSE endpoint
-    const eventSource = new EventSource('/api/upload/palette-progress');
+    // Connect to SSE endpoint for all processing updates
+    const eventSource = new EventSource('/api/upload/progress');
     eventSourceRef.current = eventSource;
 
     eventSource.onopen = () => {
-      console.log('🔗 Connected to palette progress stream');
+      console.log('🔗 Connected to processing progress stream');
     };
 
     eventSource.onmessage = (event) => {
@@ -19,7 +19,7 @@ export function usePaletteUpdates() {
         const data = JSON.parse(event.data);
         
         if (data.type === 'palette_update') {
-          console.log(`🎨 Real-time update for image ${data.imageId}:`, data.updates);
+          console.log(`🎨 Palette update for image ${data.imageId}:`, data.updates);
           
           // Parse palette if it exists
           let updates = { ...data.updates };
@@ -33,6 +33,11 @@ export function usePaletteUpdates() {
           
           // Update the specific image in the store
           updateImage(data.imageId, updates);
+        } else if (data.type === 'gemini_update') {
+          console.log(`🧠 Gemini update for image ${data.imageId}:`, data.updates);
+          
+          // Update the specific image in the store
+          updateImage(data.imageId, data.updates);
         }
       } catch (error) {
         console.error('Failed to parse SSE message:', error);
@@ -46,7 +51,7 @@ export function usePaletteUpdates() {
     // Cleanup on unmount
     return () => {
       if (eventSourceRef.current) {
-        console.log('🔌 Disconnecting from palette progress stream');
+        console.log('🔌 Disconnecting from processing progress stream');
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }

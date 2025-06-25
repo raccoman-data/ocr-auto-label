@@ -1,7 +1,11 @@
 import React from 'react';
-import { StatusIcons } from './StatusIcons';
+import { StatusIcons } from '@/components/ImageTable/StatusIcons';
 import { cn } from '@/lib/utils';
 import { Image } from '@/types';
+import { useImageStore } from '@/stores/imageStore';
+import { GroupEditor } from '@/components/GroupEditor';
+import { InlineNameEditor } from '@/components/InlineNameEditor';
+
 
 interface TableRowProps {
   image: Image;
@@ -14,7 +18,7 @@ export function TableRow({
   image, 
   isSelected, 
   isActiveSelection, 
-  onClick 
+  onClick
 }: TableRowProps) {
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -27,6 +31,35 @@ export function TableRow({
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     console.log('Thumbnail loaded successfully:', e.currentTarget.src);
+  };
+
+  // Handle name updates
+  const handleNameUpdate = async (newName: string) => {
+    try {
+      // Optimistic update
+      useImageStore.getState().updateImage(image.id, { newName });
+
+      // Send to backend
+      const response = await fetch(`/api/images/${image.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ newName }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update image name');
+      }
+
+      const updatedImage = await response.json();
+      // Update with server response
+      useImageStore.getState().updateImage(image.id, updatedImage);
+    } catch (error) {
+      console.error('Error updating image name:', error);
+      // Revert optimistic update
+      useImageStore.getState().updateImage(image.id, { newName: image.newName });
+    }
   };
 
   // Use thumbnail for table (performance), full image for sidebar
@@ -51,13 +84,31 @@ export function TableRow({
     return `${month}-${day}-${yearTwo} ${hours}:${minutes}:${seconds}`;
   };
 
+  // Get images from store to make groups reactive
+  const { images } = useImageStore();
+  
+  // Collect all groups for combobox - now reactive to store changes
+  const allGroups = React.useMemo(() => {
+    const groups = new Set<string>();
+    images.forEach(img => {
+      if (img.group && img.group.trim()) {
+        groups.add(img.group);
+      }
+    });
+    return Array.from(groups).sort();
+  }, [images]);
+
+
+
   return (
     <div
       className={cn(
-        "h-16 linear-row flex items-center cursor-pointer group",
-        isActiveSelection && "border-l-2 border-l-primary"
+        "h-16 linear-row flex items-center cursor-pointer group transition-colors duration-150 select-none",
+        // Active row (showing in sidebar) - stronger blue, override hover
+        isActiveSelection && "border-l-2 border-l-blue-100 bg-blue-100/70 hover:bg-blue-100",
+        // Selected but not active - lighter blue, override hover
+        isSelected && !isActiveSelection && "bg-blue-50 border-l border-l-blue-300 hover:bg-blue-50"
       )}
-      style={isActiveSelection ? { backgroundColor: 'hsl(var(--primary) / 0.08)' } : undefined}
       onClick={onClick}
     >
       {/* Preview Column - Using THUMBNAIL for performance */}
@@ -82,37 +133,34 @@ export function TableRow({
       <div className="w-4 linear-cell"></div>
       
       {/* Original Name Column */}
-      <div className="flex-1 linear-cell min-w-[12rem]">
+      <div className="w-48 linear-cell min-w-[10rem]">
         <div className="truncate text-muted-foreground text-sm">
           {image.originalName}
         </div>
       </div>
       
       {/* New Name Column */}
-      <div className="flex-1 linear-cell min-w-[12rem] -ml-2">
-        <div className="truncate font-medium text-sm">
-          {image.newName || (
-            <span className="text-muted-foreground italic">
-              {image.code || '—'}
-            </span>
-          )}
-        </div>
+      <div className="flex-1 linear-cell min-w-[16rem] -ml-4">
+        <InlineNameEditor
+          currentName={image.newName || ''}
+          placeholder={image.code || 'Unnamed'}
+          originalName={image.originalName}
+          onSave={handleNameUpdate}
+          variant="table"
+          className="w-full"
+        />
       </div>
       
       {/* Group Column */}
-      <div className="w-48 linear-cell -ml-2">
-        <div className="truncate text-sm">
-          {image.group ? (
-            <span 
-              className="px-2 py-1 text-primary rounded-full text-xs font-medium"
-              style={{ backgroundColor: 'hsl(var(--primary) / 0.1)' }}
-            >
-              {image.group}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </div>
+      <div className="w-56 linear-cell -ml-2 -mr-[-10px] relative">
+        {/* Combobox-style editor for selecting/creating groups */}
+        <GroupEditor 
+          imageId={image.id} 
+          currentGroup={image.group || ''} 
+          allGroups={allGroups}
+        />
+
+
       </div>
       
       {/* Timestamp Column */}
@@ -135,6 +183,7 @@ export function TableRow({
           paletteConfidence={image.paletteConfidence}
           geminiConfidence={image.geminiConfidence}
           groupingConfidence={image.groupingConfidence}
+          hasCode={!!image.code}
         />
       </div>
     </div>
