@@ -1,0 +1,119 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Lead‑Photo Auto‑Tagger – Updated PRD (Gemini‑first, no‑Docker)
+
+## 1 · Purpose & Context
+
+Field teams shoot thousands of lead‑testing photos in Malawi and Kenya. Each object must be renamed to its handwritten sample code (MWI.… or KEN.…). Manual renaming is slow and error‑prone. We will build a browser‑based app (runs locally, no Docker required) that:
+
+- Auto‑extracts the code with Gemini Flash Vision.
+- Extracts the top‑5 colour palette client‑side.
+- Renames all matching images and groups those missing a visible label using time/visual similarity.
+- Lets a human correct unknowns or mistakes in a Linear‑style grid at lightning speed.
+
+## 2 · Success Metrics
+
+| Metric | Target |
+|--------|--------|
+| Auto‑tag accuracy | ≥ 80 % straight‑through |
+| Human review speed | ≤ 1 sec/fix |
+| Through‑put | 2 000 photos → export in < 10 min on M1 Air |
+| Cloud spend (Gemini) | ≤ $0.20 for 2 000 imgs |
+
+## 3 · Personas
+
+**Tammy (Field Researcher)** – drags a camera folder into the browser and exports a zipped, renamed set.
+
+**QA Reviewer** – bulk‑fixes unknown rows with spreadsheet‑like shortcuts.
+
+## 4 · Scope (v1)
+
+### MUST Have
+
+- **Drag‑n‑drop upload** of files/folders (JPEG, PNG, HEIC).
+- **Immediate Table View** (chronologically sorted):
+  - Columns: ☐, Preview, New Name, Original Name, Group, Status (3 icons: 🎨 palette ok / 📝 code ok / 🔗 grouped).
+- **Parallel processing** – Up to 100 images at a time.
+  - Step A: extract colour palette (client JS + k‑means).
+  - Step B: call Gemini Flash Vision with prompt:
+    ```
+    Respond only with JSON (properly spaced and formatted, "NA" if blank)
+    {
+      "code": "MWI… or KEN…",
+      "otherText": "…",
+      "objectDesc": "3 words or less"
+    }
+    ```
+  - If code found ⇒ New Name = code or code_2…; Group = code; 📝 icon → green.
+- **Post‑processing auto‑group** for unlabeled
+  - Window: ±30 s.
+  - Condition: ≥2 shared palette colours OR exact objectDesc.
+- **Spreadsheet‑like fixes** – Arrow keys navigate; drag fill‑handle copies Group/Name down.
+- **Export button** – creates /output folder (or zipped download) only after user hits Apply.
+
+### NICE to Have
+
+- One‑click "Ask again with higher‑quality Gemini 1.5 Pro" on a selection.
+- Multi‑user share link (Supabase row‑level‑secured bucket).
+
+## 5 · Non‑Functional Requirements
+
+- **Zero Docker** – install with `npm i && npm start` (Node18). Uses ts‑node for backend and Vite for frontend.
+- **Local‑first** – photos are read via browser File System Access API; only a base64‑JPEG preview is POSTed to the local Node server, then to Gemini.
+- **Performance** – k‑means < 50 ms/img; Gemini batch ≤ 1 req/sec budgeted.
+- **Extensibility** – detector interface: `detectLabel(imgBuf) → {code, otherText, objectDesc}` enabling GPT‑4o swap.
+
+## 6 · Technical Architecture
+
+```
+┌──────────────┐  HTTP  ┌───────────────┐  HTTPS  ┌─────────────┐
+│ React (Vite) │◀──────▶│  Local NodeJS │────────▶│ Gemini API  │
+└──────────────┘        │  (Express)    │         └─────────────┘
+      ▲                 │  • Palette    │
+      │ Browser FS API  │  • Similarity │
+      └─────────────────┴───────────────┘
+```
+
+No Celery; concurrency handled by p‑limit inside Node. Temp data stored in SQLite (via Prisma) inside the project folder; thumbnails in /.cache.
+
+## 7 · Detailed Functional Flow
+
+1. **Upload** → frontend lists files instantly (uses last‑modified for chrono order).
+2. **Processing queue** (max 100 concurrent):
+   - Palette via node‑vibrant (top‑5 RGB + %).
+   - Send to Gemini Flash Vision; parse JSON.
+   - Row update events streamed via SSE → UI icons flip green/amber.
+3. **Clustering pass** after all Gemini results:
+   - For every unknown, find nearest photo within ±30 s sharing ≥ 2 palette hexes OR same objectDesc.
+   - If match ⇒ inherit Group/Name, 🔗 icon green.
+4. **User edits** – grid supports multi‑select, drag‑fill, hotkeys (G to set group, N to rename).
+5. **Apply** – Node renames/copies to /output; zip if size < 2 GB.
+
+## 8 · UI Snapshot
+
+- **Toolbar** – Filter (All / Unknown / Conflict) · Search · Apply (disabled until edits) · Export.
+- **Grid** – Virtualised rows; first col checkbox; hover shows full‑image tooltip. Status cell shows three stacked icons: 🎨 📝 🔗 turning grey→amber→green.
+- **Right sidebar** – Large preview; metadata list:
+  - New Name
+  - Old Name  
+  - Taken: 2025‑06‑23 14:52:04
+  - Palette: ▉▉▉▉▉
+  - Code: MWI.1.3…
+  - OtherText: "SUNFLOWER OIL" …
+
+## 9 · Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Gemini rate‑limits | delays | 100‑concurrency cap + exponential back‑off |
+| HEIC decoding on Windows | load failure | Use sharp library; fall back to libheif‑wasm in browser |
+| Palette false positives | bad grouping | Require BOTH palette & time unless user toggles "aggressive mode" |
+
+## 12 · Acceptance
+
+Run `npm start`, open `localhost:3000`, drop 2 000 mixed photos → < 10 min → zipped `/output` with ≤ 20 % amber icons. 
+
+It's important that our code, file breakdowns, etc. are done in a way that is scaleable, seperation of concerns, and maintainable.

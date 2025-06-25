@@ -1,0 +1,43 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Image {
+  id           String   @id @default(cuid())
+  originalName String
+  newName      String?
+  filePath     String   // Path to original file
+  thumbnailPath String? // Path to generated thumbnail
+  fileSize     Int
+  timestamp    DateTime // Original file timestamp
+  group        String?
+  
+  // Processing status - tracks what stage each image is in
+  paletteStatus   String @default("pending") // pending, processing, complete, error
+  geminiStatus    String @default("pending") // pending, processing, complete, error
+  groupingStatus  String @default("pending") // pending, processing, complete, error
+  
+  // Extracted data from processing
+  palette      String?  // JSON string of Array of {color: string, percentage: number}
+  code         String?  // Extracted sample code (MWI.1.3.45, etc.)
+  otherText    String?  // Other text found in image
+  objectDesc   String?  // 3-word object description
+  
+  // Confidence scores for grouping decisions (shown in sidebar)
+  paletteConfidence  Float? // 0-1 confidence for palette extraction
+  geminiConfidence   Float? // 0-1 confidence for code detection
+  groupingConfidence Float? // 0-1 confidence for auto-grouping
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@map("images")
+} 

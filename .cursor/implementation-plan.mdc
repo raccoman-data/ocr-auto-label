@@ -1,0 +1,360 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Lead-Photo Auto-Tagger Implementation Plan
+
+## 🎯 **Project Status: Phase 2 Complete**
+
+**✅ Completed Phases:**
+- Phase 1: Core UI & File Upload System
+- Phase 2: Color Palette Extraction (with optimized flow)
+
+**🚧 Current Phase:** Phase 3 - Gemini Vision Integration
+
+---
+
+## Overview
+Building a browser-based app for auto-tagging lead-testing photos with Gemini Flash Vision, color palette extraction, and intelligent grouping. Zero Docker, local-first approach with React + Node.js.
+
+## Key Design Decisions
+- **Linear-style interface** with clean, keyboard-first navigation
+- **Excel-style drag-fill** functionality for Group/Name columns (auto-increments: name_2.png, name_3.png)
+- **Always-open sidebar** showing selected image preview + metadata (no hover tooltips)
+- **Large batch processing** optimized for 2K-10K images at once
+- **Side-by-side status icons** (🎨📝🔗) in single Status column
+- **Auto-increment duplicate codes** (MWI.1.3.45_2.png, MWI.1.3.45_3.png)
+- **Confidence scores in sidebar only** (keeps main table clean)
+- **Apply-then-Export workflow** (changes must be applied before export, multiple applies allowed
+- It's important that our code, file breakdowns, etc. are done in a way that is scaleable, seperation of concerns, and maintainable.
+
+## Phase-Based Implementation Strategy
+
+### Phase 1: Core UI & File Upload System ✅ **COMPLETE**
+
+### ✅ 1.1 Project Structure & Dependencies **COMPLETE**
+- [x] Root workspace setup with frontend/backend separation
+- [x] Frontend: React 18 + TypeScript + Vite + Tailwind + Shadcn/ui
+- [x] Backend: Node.js + Express + TypeScript + Prisma + SQLite
+- [x] All package.json files with comprehensive dependencies
+
+### ✅ 1.2 Database Setup **COMPLETE**
+- [x] Prisma schema with complete Image model
+- [x] SQLite database with proper field types
+- [x] Migration system working
+- [x] Database fields: originalName, newName, filePath, thumbnailPath, fileSize, timestamp, group, paletteStatus, geminiStatus, groupingStatus, palette, code, otherText, objectDesc, confidence scores
+
+### ✅ 1.3 Backend API Foundation **COMPLETE**
+- [x] Express server with middleware (CORS, helmet, compression)
+- [x] File upload routes with Multer (50MB limit)
+- [x] Image CRUD routes with pagination/filtering
+- [x] Sharp integration for thumbnails and HEIC support
+- [x] Temp directory file storage (/tmp/ocr-auto-label/)
+- [x] Health check endpoint
+
+### ✅ 1.4 Frontend Foundation **COMPLETE**
+- [x] Main App component with layout
+- [x] Zustand store for state management
+- [x] TypeScript types matching Prisma schema
+- [x] API utility functions
+- [x] Tailwind + shadcn/ui theming
+
+### ✅ 1.5 Upload System **COMPLETE**
+- [x] Drag-n-drop UploadArea component
+- [x] File System Access API integration
+- [x] Original timestamp preservation (File.lastModified)
+- [x] **Optimized Upload Flow**: Fast upload → Separate palette processing
+- [x] Real-time status updates during processing
+- [x] Batch processing (10 images at a time)
+
+---
+
+## Phase 2: Color Palette Extraction ✅ **COMPLETE**
+
+### ✅ 2.1 Color Extraction Service **COMPLETE**
+- [x] Custom color extraction using Sharp's raw pixel data
+- [x] Center-focused extraction (50% crop for better results)
+- [x] K-means-like quantization algorithm
+- [x] Top 5 dominant colors with hex codes and percentages
+- [x] Confidence scoring based on color diversity
+
+### ✅ 2.2 Backend Integration **COMPLETE**
+- [x] **Separated processing flow**: Upload endpoint + Process-palettes endpoint
+- [x] Database storage with JSON palette data
+- [x] Status tracking (pending → processing → complete → error)
+- [x] Batch processing with concurrent limits
+
+### ✅ 2.3 Frontend Integration **COMPLETE**
+- [x] Beautiful color swatches in sidebar
+- [x] Hover tooltips with hex codes and percentages
+- [x] Status-based loading states and animations
+- [x] Real-time UI updates during processing
+- [x] Auto-refresh mechanism during palette extraction
+
+---
+
+## 🔧 **Current Issues to Fix:**
+
+### Issue 1: Thumbnail Display
+- **Problem**: Thumbnails not showing in table
+- **Likely cause**: URL mapping or file serving issue
+
+### Issue 2: Upload UI Design
+- **Problem**: Upload area looks basic after refactor
+- **Need**: Restore beautiful Linear-style design
+
+### Issue 3: Table Virtualization
+- **Problem**: Table doesn't have viewport-based virtualization
+- **Need**: Infinite scroll with viewport constraints
+
+---
+
+## Phase 3: Gemini Vision Integration 🚧 **IN PROGRESS**
+
+### 3.1 Gemini API Setup
+- [ ] Google AI Studio API key configuration
+- [ ] Gemini Flash Vision client setup
+- [ ] Rate limiting (1 req/sec, 100 concurrent max)
+- [ ] Error handling and retry logic
+
+### 3.2 Code Detection Service
+- [ ] Gemini prompt engineering for sample code detection
+- [ ] JSON response parsing (code, otherText, objectDesc)
+- [ ] Confidence scoring for detection quality
+- [ ] Batch processing integration
+
+### 3.3 Backend Integration
+- [ ] `/api/process-gemini` endpoint
+- [ ] Database updates for Gemini results
+- [ ] Status tracking for Gemini processing
+- [ ] Integration with existing processing flow
+
+### 3.4 Frontend Integration
+- [ ] Gemini status indicators in table
+- [ ] Code detection results in sidebar
+- [ ] Manual "Ask Gemini Again" functionality
+- [ ] Processing queue visualization
+
+---
+
+## Phase 4: Intelligent Grouping & Auto-Assignment 📋 **PLANNED**
+
+### 4.1 Grouping Algorithm
+- [ ] Time-based grouping (±30 seconds window)
+- [ ] Palette similarity matching (≥2 shared colors)
+- [ ] ObjectDesc exact matching
+- [ ] Confidence scoring for grouping decisions
+
+### 4.2 Auto-Assignment Logic
+- [ ] Duplicate name handling (name_2, name_3 format)
+- [ ] Group inheritance for similar images
+- [ ] Status updates for grouped images
+
+### 4.3 Frontend Grouping UI
+- [ ] Group visualization in table
+- [ ] Drag-and-drop group assignment
+- [ ] Bulk grouping operations
+
+---
+
+## Phase 5: Advanced Editing & Export 📋 **PLANNED**
+
+### 5.1 Excel-Style Editing
+- [ ] Arrow key navigation
+- [ ] Drag-fill functionality for names/groups
+- [ ] Multi-select operations
+- [ ] Keyboard shortcuts (G for group, N for rename)
+
+### 5.2 Export System
+- [ ] Apply button (validates all changes)
+- [ ] File renaming and copying to /output
+- [ ] ZIP creation for large batches
+- [ ] Export progress tracking
+
+### 5.3 Advanced Features
+- [ ] Filter system (All/Unknown/Conflict)
+- [ ] Search functionality
+- [ ] Manual cleanup tools
+- [ ] Batch operations toolbar
+
+---
+
+## 📊 **Current Metrics Status:**
+
+| Metric | Target | Current Status |
+|--------|--------|----------------|
+| Auto-tag accuracy | ≥ 80% | **Phase 3 needed** |
+| Human review speed | ≤ 1 sec/fix | **Phase 5 needed** |
+| Through-put | 2K photos < 10 min | **Upload: ✅ Fast, Processing: ⚡ Optimized** |
+| Cloud spend | ≤ $0.20/2K imgs | **Phase 3 needed** |
+
+---
+
+## 🎯 **Next Steps:**
+
+1. **Fix Current Issues** (thumbnails, upload UI, table virtualization)
+2. **Complete Phase 3** (Gemini integration)
+3. **Implement Phase 4** (intelligent grouping)
+4. **Finalize Phase 5** (editing and export)
+
+**Estimated Timeline:** 2-3 more sessions to complete core functionality.
+
+## Technical Architecture Details
+
+### Frontend Stack
+- **React 18** with TypeScript
+- **Vite** for build tooling and dev server
+- **Tailwind CSS** + **Shadcn/ui** for styling
+- **Zustand** for state management
+- **React Virtual** for table virtualization
+- **React Hook Form** for form handling
+
+### Backend Stack
+- **Node.js 18+** with TypeScript
+- **Express.js** for API server
+- **Prisma** with SQLite for data persistence
+- **Sharp** for image processing
+- **p-limit** for concurrency control
+- **Server-Sent Events** for real-time updates
+
+### Database Schema (Prisma)
+```prisma
+model Image {
+  id           String   @id @default(cuid())
+  originalName String
+  newName      String?
+  filePath     String
+  fileSize     Int
+  timestamp    DateTime
+  group        String?
+  
+  // Processing status
+  paletteStatus   String @default("pending") // pending, processing, complete, error
+  geminiStatus    String @default("pending") // pending, processing, complete, error
+  groupingStatus  String @default("pending") // pending, processing, complete, error
+  
+  // Extracted data
+  palette      Json?    // Array of {color: string, percentage: number}
+  code         String?
+  otherText    String?
+  objectDesc   String?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+```
+
+### File Structure
+```
+ocr-auto-label/
+├── frontend/                 # React + Vite app
+│   ├── src/
+│   │   ├── components/       # UI components
+│   │   │   ├── ui/          # Shadcn/ui components
+│   │   │   ├── ImageTable/  # Main table component
+│   │   │   ├── Sidebar/     # Preview sidebar
+│   │   │   └── Upload/      # File upload components
+│   │   ├── hooks/           # Custom React hooks
+│   │   ├── lib/             # Utilities and helpers
+│   │   ├── stores/          # Zustand stores
+│   │   └── types/           # TypeScript definitions
+│   ├── public/
+│   └── package.json
+├── backend/                  # Node.js + Express API
+│   ├── src/
+│   │   ├── routes/          # API routes
+│   │   ├── services/        # Business logic
+│   │   │   ├── gemini.ts    # Gemini API integration
+│   │   │   ├── palette.ts   # Color extraction
+│   │   │   └── grouping.ts  # Similarity matching
+│   │   ├── utils/           # Helper functions
+│   │   └── types/           # Shared type definitions
+│   ├── prisma/
+│   │   └── schema.prisma
+│   └── package.json
+├── .cache/                   # Thumbnail cache
+├── output/                   # Export destination
+└── package.json             # Root package.json
+```
+
+## Development Workflow
+
+### Setup Commands
+```bash
+npm install                   # Install all dependencies
+npm run dev                   # Start both frontend and backend
+npm run build                 # Build for production
+npm run test                  # Run test suites
+```
+
+### Development Scripts
+- `npm run dev:frontend` - Start Vite dev server
+- `npm run dev:backend` - Start Express server with ts-node
+- `npm run db:migrate` - Run Prisma migrations
+- `npm run db:studio` - Open Prisma Studio
+
+## Performance Targets & Monitoring
+
+### Key Metrics to Track
+- **Upload Speed**: Time from drag-drop to table display
+- **Palette Extraction**: < 50ms per image
+- **Gemini Processing**: Rate limiting compliance
+- **UI Responsiveness**: Table virtualization performance
+- **Memory Usage**: Large batch handling (2000+ images)
+
+### Optimization Strategies
+- **Image Resizing**: Compress images before Gemini API calls
+- **Caching**: SQLite + file system caching for processed results
+- **Batch Processing**: Intelligent queue management
+- **Progressive Loading**: Load table data as needed
+- **Memory Management**: Clean up processed image buffers
+
+## Risk Mitigation
+
+### Technical Risks
+1. **HEIC Support**: Use Sharp + libheif-wasm fallback
+2. **Rate Limits**: Implement exponential backoff and queue management
+3. **Memory Issues**: Stream processing for large batches
+4. **Browser Compatibility**: Test File System Access API fallbacks
+
+### UX Risks
+1. **Processing Time**: Clear progress indicators and estimated completion
+2. **Error Recovery**: Graceful handling of API failures
+3. **Data Loss**: Auto-save and recovery mechanisms
+4. **Performance**: Virtualization and lazy loading
+
+## Testing Strategy
+
+### Unit Tests
+- Palette extraction algorithms
+- Grouping logic
+- File processing utilities
+- API response parsing
+
+### Integration Tests
+- File upload flow
+- Gemini API integration
+- Database operations
+- Export functionality
+
+### End-to-End Tests
+- Complete user workflows
+- Large batch processing
+- Error scenarios
+- Performance benchmarks
+
+## Deployment & Distribution
+
+### Local Development
+- Simple `npm start` command
+- Auto-opens browser to localhost:3000
+- Hot reload for both frontend and backend
+
+### Production Build
+- Single executable bundle
+- Embedded SQLite database
+- Portable across platforms
+- No external dependencies
+
+This implementation plan provides a clear roadmap for building the Lead-Photo Auto-Tagger according to the PRD requirements, with your preferred phased approach starting with UI, then color palette extraction, Gemini integration, and finally intelligent grouping.

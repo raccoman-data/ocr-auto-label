@@ -1,0 +1,178 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Linear-style table components */
+@layer components {
+  .linear-table {
+    @apply bg-background;
+  }
+
+  .linear-cell {
+    @apply px-4 py-3 text-sm;
+  }
+
+  .linear-row {
+    @apply border-b border-border/30 hover:bg-muted/30 transition-all duration-150;
+  }
+
+  .linear-row:hover {
+    @apply shadow-sm;
+  }
+
+  .linear-row.selected {
+    background-color: hsl(var(--primary) / 0.08);
+    border-left-color: hsl(var(--primary) / 0.2);
+  }
+
+  /* Custom scrollbar for better UX */
+  .linear-table ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .linear-table ::-webkit-scrollbar-track {
+    @apply bg-muted/20;
+  }
+
+  .linear-table ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/20 rounded-full;
+  }
+
+  .linear-table ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+
+  .status-icons {
+    @apply flex items-center justify-center gap-1;
+  }
+
+  .status-icon {
+    @apply text-base opacity-30 transition-opacity;
+  }
+
+  .status-icon.pending {
+    @apply opacity-30;
+  }
+
+  .status-icon.processing {
+    @apply opacity-60 animate-pulse;
+  }
+
+  .status-icon.complete {
+    @apply opacity-100;
+  }
+
+  .status-icon.error {
+    @apply opacity-100 text-destructive;
+  }
+}
+
+/* God tier design enhancements */
+@layer utilities {
+  .glass-effect {
+    backdrop-filter: blur(8px);
+    background: rgba(255, 255, 255, 0.8);
+  }
+
+  .dark .glass-effect {
+    background: rgba(0, 0, 0, 0.8);
+  }
+}
+
+/* Custom styles for Linear-style interface */
+.linear-table {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+.linear-row {
+  @apply border-b border-border hover:bg-muted/50 transition-colors;
+}
+
+.linear-row.selected {
+  @apply bg-primary/10 border-primary/20;
+}
+
+.linear-cell {
+  @apply px-3 py-2 text-sm;
+}
+
+/* Status icons styling */
+.status-icons {
+  @apply flex items-center gap-1;
+}
+
+.status-icon {
+  @apply w-4 h-4 rounded-sm flex items-center justify-center text-xs;
+}
+
+.status-icon.pending {
+  @apply bg-gray-200 text-gray-500;
+}
+
+.status-icon.processing {
+  @apply bg-amber-200 text-amber-700;
+}
+
+.status-icon.complete {
+  @apply bg-green-200 text-green-700;
+}
+
+.status-icon.error {
+  @apply bg-red-200 text-red-700;
+} 
