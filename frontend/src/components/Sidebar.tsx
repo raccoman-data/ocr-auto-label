@@ -71,7 +71,7 @@ export function Sidebar() {
       </div>
 
       {/* Metadata */}
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+      <div className="flex-1 p-4 space-y-4 overflow-y-auto sidebar-scrollbar">
         {/* Names - more compact */}
         <div className="space-y-3">
           <div>

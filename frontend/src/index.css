@@ -82,20 +82,28 @@
   }
 
   /* Custom scrollbar for better UX */
-  .linear-table ::-webkit-scrollbar {
-    width: 8px;
+  .linear-scrollbar::-webkit-scrollbar {
+    width: 6px;
   }
 
-  .linear-table ::-webkit-scrollbar-track {
-    @apply bg-muted/20;
+  .linear-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
   }
 
-  .linear-table ::-webkit-scrollbar-thumb {
-    @apply bg-muted-foreground/20 rounded-full;
+  .linear-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.15);
+    border-radius: 3px;
+    transition: background 0.2s ease;
   }
 
-  .linear-table ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground/30;
+  .linear-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.25);
+  }
+
+  /* Firefox scrollbar */
+  .linear-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.15) transparent;
   }
 
   .status-icons {
@@ -120,6 +128,31 @@
 
   .status-icon.error {
     @apply opacity-100 text-destructive;
+  }
+
+  /* Sidebar scrollbar - even more subtle */
+  .sidebar-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.1);
+    border-radius: 2px;
+    transition: background 0.2s ease;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.2);
+  }
+
+  /* Firefox scrollbar for sidebar */
+  .sidebar-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.1) transparent;
   }
 }
 
