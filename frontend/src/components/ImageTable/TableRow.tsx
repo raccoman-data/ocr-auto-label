@@ -160,38 +160,46 @@ export function TableRow({
     return Array.from(groups).sort();
   }, [images]);
 
-  // Generate consistent color for a group based on its name
-  const getGroupColor = (groupName: string): string => {
-    if (!groupName || !groupName.trim()) return 'transparent';
-    
-    // Simple hash function to generate consistent colors
-    let hash = 0;
-    for (let i = 0; i < groupName.length; i++) {
-      hash = groupName.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    
-    // Generate subtle, neutral colors from the hash - avoiding action colors
-    const colors = [
-      'bg-slate-400',
-      'bg-gray-400', 
-      'bg-zinc-400',
-      'bg-stone-400',
-      'bg-blue-400',
-      'bg-indigo-400',
-      'bg-purple-400',
-      'bg-violet-400',
-      'bg-teal-400',
-      'bg-cyan-400',
-      'bg-emerald-400',
-      'bg-green-400',
-      'bg-sky-400',
-      'bg-pink-400',
-      'bg-rose-400',
-      'bg-orange-400'
+  // Generate colors for groups ensuring adjacent groups have different base colors
+  const getGroupColor = React.useMemo(() => {
+    // Base colors with good visual distinction
+    const baseColors = [
+      'bg-blue-400',      // Blue family
+      'bg-green-400',     // Green family  
+      'bg-purple-400',    // Purple family
+      'bg-orange-400',    // Orange family
+      'bg-pink-400',      // Pink family
+      'bg-teal-400',      // Teal family
+      'bg-indigo-400',    // Indigo family
+      'bg-emerald-400',   // Emerald family
+      'bg-cyan-400',      // Cyan family
+      'bg-violet-400',    // Violet family
+      'bg-sky-400',       // Sky family
+      'bg-rose-400',      // Rose family
     ];
+
+    // Get unique groups in the order they appear in the images array
+    const uniqueGroups: string[] = [];
+    const seen = new Set<string>();
     
-    return colors[Math.abs(hash) % colors.length];
-  };
+    images.forEach(img => {
+      if (img.group && img.group.trim() && !seen.has(img.group)) {
+        uniqueGroups.push(img.group);
+        seen.add(img.group);
+      }
+    });
+
+    // Create a mapping of group name to color index
+    const groupColorMap = new Map<string, string>();
+    uniqueGroups.forEach((groupName, index) => {
+      groupColorMap.set(groupName, baseColors[index % baseColors.length]);
+    });
+
+    return (groupName: string): string => {
+      if (!groupName || !groupName.trim()) return 'transparent';
+      return groupColorMap.get(groupName) || 'bg-gray-400'; // fallback
+    };
+  }, [images]); // Recalculate when images change
 
   // Get current selection info for context menu
   const { selection } = useImageStore();

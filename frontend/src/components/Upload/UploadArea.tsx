@@ -74,7 +74,7 @@ export function UploadArea() {
     setUploadStart(Date.now());
     
     // Estimate extraction time based on file size (roughly 50MB per second for modern SSDs)
-    const est = Math.max(2, Math.ceil(zipFile.size / (50 * 1024 * 1024)));
+    const est = Math.max(2, Math.ceil(zipFile.size / (25 * 1024 * 1024)));
     setEstimatedSeconds(est);
 
     try {

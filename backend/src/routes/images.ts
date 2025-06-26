@@ -420,20 +420,34 @@ router.post('/:id/rerun-gemini', async (req, res) => {
       return res.status(404).json({ error: 'Image not found' });
     }
 
-    // Reset status locally
+    console.log(`🔄 Manual retry extraction requested for: ${image.originalName}`);
+
+    // Reset all extraction-related data and status
     await prisma.image.update({
       where: { id },
       data: {
         geminiStatus: 'pending',
+        status: 'pending', 
         geminiConfidence: 0,
+        code: null,
+        otherText: null,
+        objectDesc: null,
+        objectColors: null,
+        // Keep group and grouping status if already set by user
         updatedAt: new Date(),
       },
     });
 
     // Kick off background processing (no await)
-    processGeminiForImage(id).catch(console.error);
+    processGeminiForImage(id).catch((error) => {
+      console.error(`❌ Manual retry failed for ${image.originalName}:`, error);
+    });
 
-    return res.status(202).json({ message: 'Gemini reprocessing started' });
+    return res.status(202).json({ 
+      message: 'Gemini reprocessing started', 
+      imageId: id,
+      originalName: image.originalName 
+    });
 
   } catch (error) {
     console.error('Error triggering Gemini reprocess:', error);

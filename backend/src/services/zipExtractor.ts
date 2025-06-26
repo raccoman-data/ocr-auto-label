@@ -145,7 +145,7 @@ export function isValidZipFile(buffer: Buffer): boolean {
  */
 export function getExtractionEstimate(zipSizeBytes: number): number {
   // Rough estimate: 50MB per second for extraction + processing on modern SSDs
-  const estimatedSeconds = Math.ceil(zipSizeBytes / (50 * 1024 * 1024));
+  const estimatedSeconds = Math.ceil(zipSizeBytes / (25 * 1024 * 1024));
   return Math.max(2, estimatedSeconds); // Minimum 2 seconds
 }
 

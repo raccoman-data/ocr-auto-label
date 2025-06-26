@@ -19,6 +19,17 @@ import uploadRoutes from './routes/upload';
 // Initialize Prisma client
 export const prisma = new PrismaClient();
 
+// Add global error handlers to prevent backend crashes
+process.on('uncaughtException', (error) => {
+  console.error('🚨 Uncaught Exception:', error);
+  // Don't exit - just log the error and continue
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - just log the error and continue
+});
+
 // Use OS temp directory + app-specific folder to avoid bloating codebase
 const TEMP_DIR = path.join(os.tmpdir(), 'ocr-auto-label');
 const UPLOADS_DIR = path.join(TEMP_DIR, 'uploads');
@@ -108,7 +119,12 @@ app.get('/raw/:filename', (req, res) => {
   res.sendFile(filePath, (err) => {
     if (err) {
       console.error('Error serving raw image:', err);
-      res.status(404).json({ error: 'Image not found' });
+      
+      // Only send error response if headers haven't been sent yet
+      // This prevents "Cannot set headers after they are sent" errors
+      if (!res.headersSent) {
+        res.status(404).json({ error: 'Image not found' });
+      }
     }
   });
 });
@@ -128,11 +144,21 @@ app.get('/api/health', (req, res) => {
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Handle client disconnection errors gracefully
+  if (err.message.includes('EPIPE') || err.message.includes('ECONNRESET')) {
+    console.log('👋 Client disconnected during request');
+    return; // Don't try to send response to disconnected client
+  }
+  
   console.error('Error:', err);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-  });
+  
+  // Only send error response if headers haven't been sent
+  if (!res.headersSent) {
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+    });
+  }
 });
 
 // 404 handler

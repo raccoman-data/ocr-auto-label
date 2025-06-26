@@ -114,11 +114,11 @@ CRITICAL READING RULES:
 
 🚨 CRITICAL D/0 CONFUSION RULE 🚨:
 - In MWI.1 codes, position 5 MUST be [number][letter]: like "1A", "2B", "7D", etc.
-- If you see what looks like "10" in position 5, it's probably "1D" (letter D, not zero)
+- If you see what looks like "10" in position 5, it's probably "1D" (letter D, not zero) - similarly B gets mistaken for 8
 - The pattern REQUIRES a letter A-D after the number in position 5
 - "10" alone is INVALID - position 5 needs format like "1D", "2A", "3B", etc.
 - ALWAYS double-check: does the "0" look like it could be a "D"?
-- Remember: D's are often mistaken for 0s in handwriting!
+- Remember: D's are often mistaken for 0s in handwriting and B's are often mistaken for 8's.
 
 VALIDATION PROCESS:
 1. Read the code character by character
@@ -132,7 +132,7 @@ SPECIFIC CONSTRAINTS TO CHECK:
 - The correct reading is likely "1.1A", "1.2B", etc.
 - Position 5 in MWI.1.X.X.X.[1-10][A-D].X.X: MUST have format [number][letter]
 - If you read "10" in position 5, re-examine - it should be "1D" (D not 0)
-- If you read "20", "30", etc. in position 5, look for the missing letter (probably D)
+- If you read "20", "30", etc. in position 5, look for the missing letter (probably D or B)
 - Numbers 11+ alone in position 5 are IMPOSSIBLE - check for missed periods
 - Position 5 examples: "1A", "2B", "7D", "10A" - never just "10"
 

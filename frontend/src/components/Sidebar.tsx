@@ -4,7 +4,8 @@ import { formatFileSize, formatTimestamp, cn } from '@/lib/utils';
 import { StatusDisplay } from '@/components/ImageTable/StatusDisplay';
 import { GroupEditor } from '@/components/GroupEditor';
 import { InlineNameEditor } from '@/components/InlineNameEditor';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, RefreshCw } from 'lucide-react';
+import { Button } from './ui/button';
 
 
 export function Sidebar() {
@@ -15,6 +16,7 @@ export function Sidebar() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -103,6 +105,44 @@ export function Sidebar() {
       console.error('Error updating image name:', error);
       // Revert optimistic update
       updateImage(selectedImage.id, { newName: selectedImage.newName });
+    }
+  };
+
+  // Handle retry extraction
+  const handleRetryExtraction = async () => {
+    if (!selectedImage || isRetrying) return;
+    
+    try {
+      setIsRetrying(true);
+      
+      // Optimistic update to show we're retrying
+      updateImage(selectedImage.id, { 
+        status: 'extracting',
+        geminiStatus: 'processing'
+      });
+
+      // Send retry request to backend
+      const response = await fetch(`/api/images/${selectedImage.id}/rerun-gemini`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to retry extraction');
+      }
+
+      console.log('✅ Retry extraction started for:', selectedImage.originalName);
+    } catch (error) {
+      console.error('Error retrying extraction:', error);
+      // Revert optimistic update on error
+      updateImage(selectedImage.id, { 
+        status: 'pending',
+        geminiStatus: 'error'
+      });
+    } finally {
+      setIsRetrying(false);
     }
   };
 
@@ -374,7 +414,23 @@ export function Sidebar() {
 
         {/* Processing Status */}
         <div>
-          <label className="text-xs font-semibold text-foreground mb-2 block">Status</label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-semibold text-foreground">Status</label>
+            <Button
+              onClick={handleRetryExtraction}
+              disabled={isRetrying}
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs hover:bg-muted/50"
+              title="Re-run extraction with Gemini AI"
+            >
+              {isRetrying ? (
+                <RefreshCw className="w-3 h-3 animate-spin" />
+              ) : (
+                <RefreshCw className="w-3 h-3" />
+              )}
+            </Button>
+          </div>
           <StatusDisplay status={selectedImage.status} />
         </div>
       </div>
