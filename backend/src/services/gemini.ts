@@ -96,6 +96,7 @@ export async function extractTextFromImage(imagePath: string): Promise<GeminiRes
 SAMPLE CODE PATTERNS (must match exactly):
 1. MWI.1.[1-3].[1-24].[1-10][A-D].[1-30].[1-12] 
    Example: MWI.1.2.15.7B.12.8 (exactly 6 periods, 7 segments)
+   Common D/0 case: MWI.1.1.18.1D.7.11 (NOT MWI.1.1.18.10.7.11)
 
 2. MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
    Example: MWI.0.1.4.10.15.7 (exactly 5 periods, 6 segments)
@@ -111,6 +112,14 @@ CRITICAL READING RULES:
 - COMMON ERROR: "11A" should be read as "1.1A" (check for missing period)
 - If a number seems too large for its position, look for a missed period
 
+🚨 CRITICAL D/0 CONFUSION RULE 🚨:
+- In MWI.1 codes, position 5 MUST be [number][letter]: like "1A", "2B", "7D", etc.
+- If you see what looks like "10" in position 5, it's probably "1D" (letter D, not zero)
+- The pattern REQUIRES a letter A-D after the number in position 5
+- "10" alone is INVALID - position 5 needs format like "1D", "2A", "3B", etc.
+- ALWAYS double-check: does the "0" look like it could be a "D"?
+- Remember: D's are often mistaken for 0s in handwriting!
+
 VALIDATION PROCESS:
 1. Read the code character by character
 2. Check if your reading matches one of the three patterns exactly
@@ -121,6 +130,11 @@ SPECIFIC CONSTRAINTS TO CHECK:
 - Position 4 in MWI.1.X.X.[1-10][A-D].X.X: Numbers 11+ are IMPOSSIBLE
 - If you read "11A", "12B", etc. in this position, you MISSED a period
 - The correct reading is likely "1.1A", "1.2B", etc.
+- Position 5 in MWI.1.X.X.X.[1-10][A-D].X.X: MUST have format [number][letter]
+- If you read "10" in position 5, re-examine - it should be "1D" (D not 0)
+- If you read "20", "30", etc. in position 5, look for the missing letter (probably D)
+- Numbers 11+ alone in position 5 are IMPOSSIBLE - check for missed periods
+- Position 5 examples: "1A", "2B", "7D", "10A" - never just "10"
 
 SELF-VALIDATION CHECKLIST:
 - Does the code start with "MWI" or "KEN"? 

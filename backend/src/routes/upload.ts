@@ -17,7 +17,7 @@ import pLimit from 'p-limit';
 const router = express.Router();
 
 // Rate limiting for parallel Gemini API calls – prevents hitting quota/rate limits
-const geminiLimit = pLimit(40); // Optimized: faster image processing allows higher concurrency
+const geminiLimit = pLimit(50); // Optimized: faster image processing allows higher concurrency
 
 // Use OS temp directory + app-specific folder to avoid bloating codebase
 const TEMP_DIR = path.join(os.tmpdir(), 'ocr-auto-label');
