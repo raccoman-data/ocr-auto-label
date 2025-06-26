@@ -5,6 +5,8 @@ import { TableRow } from './TableRow';
 import { Image } from '@/types';
 import { useImageStore } from '@/stores/imageStore';
 import { GroupEditorHandle } from '@/components/GroupEditor';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { deleteImage } from '@/lib/api';
 
 // Detailed validation function (matching backend logic)
 function isValidSampleCode(code: string | null): boolean {
@@ -53,6 +55,49 @@ export function ImageTable({
     id: string | null;
     additionalIds: string[];
   }>({ id: null, additionalIds: [] });
+
+  // Delete confirmation modal state
+  const [showDeleteModal, setShowDeleteModal] = React.useState(false);
+
+  // Handle delete action for selected images
+  const handleDeleteSelected = async () => {
+    try {
+      // Determine which images to delete: selected images if any, otherwise current selected image
+      const imagesToDelete = selection.selectedIds.size > 0 
+        ? Array.from(selection.selectedIds)
+        : selectedImage?.id
+          ? [selectedImage.id]
+          : [];
+      
+      if (imagesToDelete.length === 0) return;
+      
+      console.log(`🗑️ Deleting ${imagesToDelete.length} images...`);
+      
+      // Delete each image
+      for (const imageId of imagesToDelete) {
+        try {
+          await deleteImage(imageId);
+          useImageStore.getState().removeImage(imageId);
+        } catch (error) {
+          console.error(`❌ Failed to delete image ${imageId}:`, error);
+          // Continue with other deletions even if one fails
+        }
+      }
+      
+      // Clear selection after successful deletion
+      useImageStore.setState({
+        selection: {
+          selectedIds: new Set(),
+          lastSelectedId: null,
+        },
+      });
+      
+      console.log(`✅ Successfully deleted ${imagesToDelete.length} image(s)`);
+    } catch (error) {
+      console.error('❌ Failed to delete images:', error);
+      alert(`Failed to delete images: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
   // Callback to register GroupEditor refs from rows
   const handleGroupEditorRef = (id: string, ref: React.RefObject<GroupEditorHandle>) => {
@@ -314,6 +359,24 @@ export function ImageTable({
           lastSelectedId: selectedImage?.id || null,
         },
       });
+      return;
+    }
+
+    /* ----- Delete images (⌘/Ctrl + Shift + Delete/Backspace) --- */
+    if (isMeta && e.shiftKey && (e.key === 'Backspace' || e.key === 'Delete')) {
+      e.preventDefault(); // Prevent browser shortcuts
+      console.log('Cmd+Shift+Delete pressed'); // Debug log
+      
+      // Get target IDs - either selection or current image
+      const targetIds: string[] = selection.selectedIds.size > 0
+        ? Array.from(selection.selectedIds)
+        : selectedImage?.id
+          ? [selectedImage.id]
+          : [];
+
+      if (targetIds.length > 0) {
+        setShowDeleteModal(true);
+      }
       return;
     }
 
@@ -589,6 +652,32 @@ export function ImageTable({
           {visibleRange.end} of {images.length} rows
         </span>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        open={showDeleteModal}
+        onOpenChange={setShowDeleteModal}
+        title={
+          selection.selectedIds.size > 1 
+            ? `Delete ${selection.selectedIds.size} Images` 
+            : selectedImage?.id && selection.selectedIds.has(selectedImage.id)
+              ? 'Delete Image'
+              : selectedImage
+                ? 'Delete Image'
+                : 'Delete Images'
+        }
+        description={
+          selection.selectedIds.size > 1
+            ? `Are you sure you want to delete ${selection.selectedIds.size} selected images?\n\nThis action cannot be undone.`
+            : selectedImage
+              ? `Are you sure you want to delete "${selectedImage.originalName}"?\n\nThis action cannot be undone.`
+              : 'Are you sure you want to delete the selected images?\n\nThis action cannot be undone.'
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="destructive"
+        onConfirm={handleDeleteSelected}
+      />
     </div>
   );
 } 

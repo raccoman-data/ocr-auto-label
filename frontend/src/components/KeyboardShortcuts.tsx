@@ -23,6 +23,7 @@ const shortcuts: KeyboardShortcut[] = [
   { keys: [isMac ? 'Cmd' : 'Ctrl', 'V'], description: 'Paste group to selection', category: 'editing' },
   { keys: [isMac ? 'Cmd' : 'Ctrl', 'G'], description: 'Edit group for selection', category: 'editing' },
   { keys: [isMac ? 'Delete' : 'Backspace'], description: 'Clear groups for selection', category: 'editing' },
+  { keys: [isMac ? 'Cmd' : 'Ctrl', 'Shift', isMac ? 'Delete' : 'Backspace'], description: 'Delete selected images', category: 'editing' },
 ];
 
 interface KeyboardShortcutsPanelProps {
