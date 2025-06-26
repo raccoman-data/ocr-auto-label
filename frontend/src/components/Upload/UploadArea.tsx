@@ -2,6 +2,7 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { Upload, Loader2 } from 'lucide-react';
 import { useImageStore } from '@/stores/imageStore';
 import { uploadFiles, uploadZipFile, processPalettes } from '@/lib/api';
+import { HowItWorks } from '@/components/HowItWorks';
 
 export function UploadArea() {
   const [isDragOver, setIsDragOver] = useState(false);
@@ -253,26 +254,6 @@ export function UploadArea() {
                 <p className="text-muted-foreground text-lg">
                   Supports JPEG, PNG, HEIC formats and ZIP archives
                 </p>
-              </div>
-              
-              {/* Feature highlights */}
-              <div className="flex items-center justify-center gap-6 text-sm text-muted-foreground flex-wrap">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                  <span>Auto-extract color palettes</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                  <span>Detect sample codes</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-                  <span>Group similar images</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                  <span>Extract ZIP archives</span>
-                </div>
               </div>
             </>
           )}

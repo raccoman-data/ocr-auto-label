@@ -3,6 +3,8 @@ import { UploadArea } from '@/components/Upload/UploadArea';
 import { Toolbar } from '@/components/Toolbar';
 import { ImageTable } from '@/components/ImageTable/ImageTable';
 import { Sidebar } from '@/components/Sidebar';
+import { KeyboardShortcutsPanel } from '@/components/KeyboardShortcuts';
+import { HowItWorks } from '@/components/HowItWorks';
 import { useImageStore } from '@/stores/imageStore';
 import { usePaletteUpdates } from '@/hooks/usePaletteUpdates';
 import { Image } from '@/types';
@@ -63,8 +65,20 @@ function App() {
     <div className="h-screen bg-background text-foreground flex flex-col">
       {/* Upload Area - shown when no images */}
       {images.length === 0 && (
-        <div className="flex-1 flex items-center justify-center p-8">
-          <UploadArea />
+        <div className="flex-1 flex flex-col items-center justify-center p-8 pt-16">
+          {/* How It Works section - above upload area */}
+          <div className="w-full max-w-4xl mb-12">
+            <HowItWorks />
+          </div>
+          
+          <div className="w-full max-w-4xl">
+            <UploadArea />
+          </div>
+          
+          {/* Keyboard Shortcuts panel */}
+          <div className="mt-12 w-full max-w-4xl">
+            <KeyboardShortcutsPanel />
+          </div>
         </div>
       )}
 

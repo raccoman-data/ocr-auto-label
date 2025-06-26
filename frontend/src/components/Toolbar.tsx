@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { Filter, Download, Trash2 } from 'lucide-react';
+import { Filter, Download, Trash2, HelpCircle } from 'lucide-react';
 import { useImageStore } from '@/stores/imageStore';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { KeyboardShortcutsPanel } from '@/components/KeyboardShortcuts';
 import { cleanupAllData } from '@/lib/api';
 
 export function Toolbar() {
@@ -55,8 +57,25 @@ export function Toolbar() {
         )}
       </div>
 
-      {/* Right side - Filter, Clear, and Export */}
+      {/* Right side - Help, Filter, Clear, and Export */}
       <div className="flex items-center gap-3">
+        {/* Keyboard shortcuts help - always visible */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-2 px-3 text-muted-foreground hover:text-foreground"
+              title="Keyboard shortcuts"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-96 p-4" align="end">
+            <KeyboardShortcutsPanel variant="compact" />
+          </PopoverContent>
+        </Popover>
+
         {hasImages && (
           <>
             <Select value={filter} onValueChange={handleFilterChange}>
