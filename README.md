@@ -19,8 +19,6 @@ I built this app specifically for the team at [leadresearch.org](https://leadres
 4. **Quick review interface** lets you fix any mistakes with Excel-like keyboard shortcuts
 5. **Export** your perfectly organized collection
 
-**Real results from leadresearch.org:** 2,000 photos processed in ~8 minutes, 85%+ accuracy, ~$0.70 in AI costs. Their research team went from spending entire days on file organization to getting back to actual science.
-
 ---
 
 ## 🚀 Quick Start (5 Minutes)
