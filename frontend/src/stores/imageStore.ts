@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { Image, FilterOption, SelectionState, DragState } from '@/types';
 import { getImages } from '@/lib/api';
+import { getValidationStatus } from '@/lib/validation';
 
 // SSE connection for real-time updates
 let eventSource: EventSource | null = null;
@@ -242,6 +243,10 @@ export const useImageStore = create<ImageStore>()(
         } else if (filter === 'conflict') {
           filtered = filtered.filter(img => 
             img.geminiStatus === 'error' || img.paletteStatus === 'error'
+          );
+        } else if (filter === 'invalid_codes') {
+          filtered = filtered.filter(img => 
+            img.code && getValidationStatus(img.code) === 'invalid'
           );
         }
         

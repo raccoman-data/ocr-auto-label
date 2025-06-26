@@ -58,16 +58,50 @@ export async function extractTextFromImage(imagePath: string): Promise<GeminiRes
     });
 
     // Prepare the prompt for OCR extraction
-    const prompt = `Read the handwritten text on this sample label. Look for a code that starts with "MWI" or "KEN" followed by numbers and letters separated by periods.
+    const prompt = `You are reading handwritten sample codes on laboratory labels. These codes are CRITICAL for research - accuracy is paramount.
 
-Pattern: MWI.1.2.3.4A.5 (numbers, then number+letter, then number)
+SAMPLE CODE PATTERNS (must match exactly):
+1. MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12] 
+   Example: MWI.1.2.15.7B.12.8 (exactly 6 periods, 7 segments)
 
-Be very careful to read every character exactly as written, including all periods between segments.
+2. MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
+   Example: MWI.0.1.4.10.15.7 (exactly 5 periods, 6 segments)
+
+3. KEN.0.[1-2].[1-9].[1-8].[1-11].[1-12]
+   Example: KEN.0.2.3.5.8.11 (exactly 5 periods, 6 segments)
+
+CRITICAL READING RULES:
+- Each segment is separated by a PERIOD (.)
+- Count periods carefully - they separate distinct values
+- When you see consecutive numbers, check if there's a period between them
+- For letter+number combinations (like "1A"), the letter comes AFTER the number
+- COMMON ERROR: "11A" should be read as "1.1A" (check for missing period)
+- If a number seems too large for its position, look for a missed period
+
+VALIDATION PROCESS:
+1. Read the code character by character
+2. Check if your reading matches one of the three patterns exactly
+3. If ANY segment violates the range constraints, re-examine for missed periods
+4. Pay special attention to numbers > 10 in positions that only allow 1-10
+
+SPECIFIC CONSTRAINTS TO CHECK:
+- Position 4 in MWI.1.X.X.[1-10][A-D].X.X: Numbers 11+ are IMPOSSIBLE
+- If you read "11A", "12B", etc. in this position, you MISSED a period
+- The correct reading is likely "1.1A", "1.2B", etc.
+
+SELF-VALIDATION CHECKLIST:
+- Does the code start with "MWI" or "KEN"? 
+- Are there exactly 5 or 6 periods?
+- Does each numeric segment fall within the specified ranges?
+- Are letters only A-D and only after numbers in allowed positions?
+- If ANY constraint fails, re-examine the handwriting for missed periods
+
+READ CHARACTER BY CHARACTER, validate against patterns, and self-correct if needed.
 
 Respond only with JSON:
 {
   "code": "MWI… or KEN… sample code if found, otherwise NA",
-  "otherText": "Any other text visible in the image, otherwise NA",
+  "otherText": "Any other text visible in the image, otherwise NA", 
   "objectDesc": "Describe the main object in 3 words or less, otherwise NA"
 }`;
 

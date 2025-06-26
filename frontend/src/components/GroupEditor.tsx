@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { useImageStore } from '@/stores/imageStore';
 import { Check, ChevronsUpDown, Edit2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -18,13 +18,23 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-interface GroupEditorProps {
+export interface GroupEditorProps {
   imageId: string;
   currentGroup: string;
   allGroups: string[];
+  additionalImageIds?: string[];
 }
 
-export function GroupEditor({ imageId, currentGroup, allGroups }: GroupEditorProps) {
+export interface GroupEditorHandle {
+  open: () => void;
+}
+
+export const GroupEditor = forwardRef<GroupEditorHandle, GroupEditorProps>(({ 
+  imageId, 
+  currentGroup, 
+  allGroups,
+  additionalImageIds = []
+}: GroupEditorProps, ref) => {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(currentGroup);
   const [isEditing, setIsEditing] = useState(false);
@@ -46,41 +56,69 @@ export function GroupEditor({ imageId, currentGroup, allGroups }: GroupEditorPro
     }
   }, [isEditing]);
 
+  // Expose open method via ref
+  useImperativeHandle(ref, () => ({
+    open: () => {
+      console.log('GroupEditor open() called'); // Debug log
+      setOpen(true);
+    }
+  }), []); // Empty deps array since setOpen is stable
+
+  // Log when open state changes
+  useEffect(() => {
+    console.log('GroupEditor open state:', open); // Debug log
+  }, [open]);
+
   const handleGroupChange = async (newGroup: string) => {
     setValue(newGroup);
     setOpen(false);
     
+    // Collect all image IDs to update
+    const idsToUpdate = [imageId, ...additionalImageIds];
+    
     try {
-      // Update locally first for immediate UI feedback
-      updateImage(imageId, { group: newGroup, newName: newGroup ? undefined : '' });
-      
-      // Update on backend
-      const response = await fetch(`/api/images/${imageId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ group: newGroup, newName: newGroup ? undefined : '' }),
-      });
+      // Update all images in sequence to ensure proper suffix handling
+      for (const id of idsToUpdate) {
+        // Update locally first for immediate UI feedback
+        updateImage(id, { 
+          group: newGroup, 
+          groupingStatus: newGroup ? 'processing' : 'pending',
+          groupingConfidence: newGroup ? 0.5 : 0,
+        });
+        
+        // Update on backend
+        const response = await fetch(`/api/images/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ group: newGroup }),
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to update group');
+        if (!response.ok) {
+          throw new Error('Failed to update group');
+        }
+
+        const updatedImage = await response.json();
+        
+        // Update with backend response (includes any auto-generated newName)
+        updateImage(id, {
+          group: updatedImage.group,
+          newName: updatedImage.newName,
+          groupingStatus: updatedImage.group ? 'complete' : 'pending',
+          groupingConfidence: updatedImage.group ? 1.0 : 0,
+        });
       }
-
-      const updatedImage = await response.json();
-      
-      // Update with backend response (includes any auto-generated newName)
-      updateImage(imageId, {
-        group: updatedImage.group,
-        newName: updatedImage.group ? updatedImage.newName : '',
-        groupingStatus: updatedImage.group ? 'complete' : 'pending',
-        groupingConfidence: updatedImage.group ? 1.0 : 0,
-      });
-
     } catch (error) {
       console.error('Failed to update group:', error);
-      // Revert on error
-      updateImage(imageId, { group: currentGroup });
+      // Revert on error for all affected images
+      idsToUpdate.forEach(id => {
+        updateImage(id, { 
+          group: currentGroup,
+          groupingStatus: currentGroup ? 'complete' : 'pending',
+          groupingConfidence: currentGroup ? 1.0 : 0,
+        });
+      });
       setValue(currentGroup);
     }
   };
@@ -145,7 +183,20 @@ export function GroupEditor({ imageId, currentGroup, allGroups }: GroupEditorPro
 
   return (
     <div className="flex items-center gap-1 group/editor">
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        // Clear additional IDs when closing
+        if (!isOpen && additionalImageIds.length > 0) {
+          // Find the parent ImageTable component and reset its state
+          const tableEl = document.querySelector('[data-image-table]');
+          if (tableEl) {
+            const tableComponent = (tableEl as any).__reactFiber$?.return?.stateNode;
+            if (tableComponent?.setActiveEditorState) {
+              tableComponent.setActiveEditorState({ id: null, additionalIds: [] });
+            }
+          }
+        }
+      }}>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
@@ -260,4 +311,4 @@ export function GroupEditor({ imageId, currentGroup, allGroups }: GroupEditorPro
     </Button>
   </div>
   );
-} 
+}); 

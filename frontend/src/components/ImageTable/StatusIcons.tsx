@@ -2,6 +2,7 @@ import React from 'react';
 import { Palette, Brain, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ProcessingStatus } from '@/types';
+import { ValidationIcon } from '../ui/ValidationIcon';
 
 interface StatusIconsProps {
   paletteStatus: ProcessingStatus;
@@ -11,6 +12,7 @@ interface StatusIconsProps {
   geminiConfidence?: number;
   groupingConfidence?: number;
   hasCode?: boolean; // Whether Gemini found a sample code
+  code?: string | null; // The detected code for validation
 }
 
 export function StatusIcons({ 
@@ -20,7 +22,8 @@ export function StatusIcons({
   paletteConfidence,
   geminiConfidence,
   groupingConfidence,
-  hasCode
+  hasCode,
+  code
 }: StatusIconsProps) {
   
   const getStatusIcon = (
@@ -88,6 +91,13 @@ export function StatusIcons({
       
       {/* Grouping Status */}
       {getStatusIcon(groupingStatus, Link2, 'Grouping', groupingConfidence)}
+      
+      {/* Validation Status - Only show when Gemini has found a code */}
+      {hasCode && code && (
+        <div className="flex items-center justify-center w-7 h-7 rounded-full bg-gray-50" title="Code Format Validation">
+          <ValidationIcon code={code} className="w-5 h-5" />
+        </div>
+      )}
     </div>
   );
 } 

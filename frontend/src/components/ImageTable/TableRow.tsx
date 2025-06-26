@@ -1,25 +1,37 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { StatusIcons } from '@/components/ImageTable/StatusIcons';
 import { cn } from '@/lib/utils';
 import { Image } from '@/types';
 import { useImageStore } from '@/stores/imageStore';
-import { GroupEditor } from '@/components/GroupEditor';
+import { GroupEditor, GroupEditorHandle } from '@/components/GroupEditor';
 import { InlineNameEditor } from '@/components/InlineNameEditor';
-
 
 interface TableRowProps {
   image: Image;
   isSelected: boolean;
   isActiveSelection: boolean;
   onClick: (event: React.MouseEvent) => void;
+  onGroupEditorRef?: (id: string, ref: React.RefObject<GroupEditorHandle>) => void;
+  additionalImageIds?: string[];
 }
 
 export function TableRow({ 
   image, 
   isSelected, 
   isActiveSelection, 
-  onClick
+  onClick,
+  onGroupEditorRef,
+  additionalImageIds = []
 }: TableRowProps) {
+  const groupEditorRef = useRef<GroupEditorHandle>(null);
+
+  // Register ref with parent when mounted
+  React.useEffect(() => {
+    if (onGroupEditorRef) {
+      console.log('Registering GroupEditor ref for image:', image.id); // Debug log
+      onGroupEditorRef(image.id, groupEditorRef);
+    }
+  }, [image.id, onGroupEditorRef]);
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     console.error('Thumbnail failed to load:', {
@@ -98,8 +110,6 @@ export function TableRow({
     return Array.from(groups).sort();
   }, [images]);
 
-
-
   return (
     <div
       className={cn(
@@ -110,6 +120,7 @@ export function TableRow({
         isSelected && !isActiveSelection && "bg-blue-50 border-l border-l-blue-300 hover:bg-blue-50"
       )}
       onClick={onClick}
+      data-image-id={image.id}
     >
       {/* Preview Column - Using THUMBNAIL for performance */}
       <div className="w-20 linear-cell">
@@ -155,12 +166,12 @@ export function TableRow({
       <div className="w-56 linear-cell -ml-2 -mr-[-10px] relative">
         {/* Combobox-style editor for selecting/creating groups */}
         <GroupEditor 
+          ref={groupEditorRef}
           imageId={image.id} 
           currentGroup={image.group || ''} 
           allGroups={allGroups}
+          additionalImageIds={additionalImageIds}
         />
-
-
       </div>
       
       {/* Timestamp Column */}
@@ -175,7 +186,7 @@ export function TableRow({
       </div>
       
       {/* Status Column */}
-      <div className="w-24 linear-cell flex justify-end pr-2">
+      <div className="w-32 linear-cell flex justify-end pr-2">
         <StatusIcons
           paletteStatus={image.paletteStatus}
           geminiStatus={image.geminiStatus}
@@ -184,6 +195,7 @@ export function TableRow({
           geminiConfidence={image.geminiConfidence}
           groupingConfidence={image.groupingConfidence}
           hasCode={!!image.code}
+          code={image.code}
         />
       </div>
     </div>

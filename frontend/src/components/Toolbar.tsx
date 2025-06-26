@@ -18,7 +18,7 @@ export function Toolbar() {
   const hasImages = images.length > 0;
 
   const handleFilterChange = (value: string) => {
-    setFilter(value as 'all' | 'unknown' | 'conflict');
+    setFilter(value as 'all' | 'unknown' | 'conflict' | 'invalid_codes');
   };
 
   const handleExport = () => {
@@ -68,6 +68,7 @@ export function Toolbar() {
                 <SelectItem value="all">All</SelectItem>
                 <SelectItem value="unknown">Unknown</SelectItem>
                 <SelectItem value="conflict">Conflict</SelectItem>
+                <SelectItem value="invalid_codes">Invalid Codes</SelectItem>
               </SelectContent>
             </Select>
 

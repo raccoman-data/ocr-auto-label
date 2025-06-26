@@ -4,6 +4,7 @@ import { TableHeader } from './TableHeader';
 import { TableRow } from './TableRow';
 import { Image } from '@/types';
 import { useImageStore } from '@/stores/imageStore';
+import { GroupEditorHandle } from '@/components/GroupEditor';
 
 interface ImageTableProps {
   images: Image[];
@@ -19,12 +20,27 @@ export function ImageTable({
   const {
     selection,
     toggleImageSelection,
+    selectedImage,
   } = useImageStore();
 
   // Holds the group copied via ⌘/Ctrl-C so we can paste later
   const copiedGroupRef = useRef<string | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   
+  // Map to store refs to GroupEditor components
+  const groupEditorRefs = useRef<Map<string, React.RefObject<GroupEditorHandle>>>(new Map());
+  
+  // Track which editor should show additional IDs
+  const [activeEditorState, setActiveEditorState] = React.useState<{
+    id: string | null;
+    additionalIds: string[];
+  }>({ id: null, additionalIds: [] });
+
+  // Callback to register GroupEditor refs from rows
+  const handleGroupEditorRef = (id: string, ref: React.RefObject<GroupEditorHandle>) => {
+    groupEditorRefs.current.set(id, ref);
+  };
+
   // Set up virtualization with fixed row height
   const rowVirtualizer = useVirtualizer({
     count: images.length,
@@ -39,17 +55,43 @@ export function ImageTable({
   const [visibleCount, setVisibleCount] = React.useState(0);
   const [visibleRange, setVisibleRange] = React.useState<{start:number;end:number}>({start:1,end:1});
 
-  // Use the virtualizer's range directly - it already knows what's visible
+  // Calculate visible range based on viewport intersection
   useEffect(() => {
-    const range = rowVirtualizer.getVirtualItems();
-    if (!range.length) return;
-    
-    const firstVisible = range[0].index + 1; // Convert to 1-based
-    const lastVisible = range[range.length - 1].index + 1;
-    
-    setVisibleRange({ start: firstVisible, end: lastVisible });
-    setVisibleCount(lastVisible - firstVisible + 1);
-  }, [rowVirtualizer.getVirtualItems()]);
+    if (!parentRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Filter to only visible rows
+        const visibleRows = entries
+          .filter(entry => entry.isIntersecting)
+          .map(entry => {
+            const el = entry.target as HTMLElement;
+            const imageId = el.getAttribute('data-image-id');
+            return imageId ? images.findIndex(img => img.id === imageId) : -1;
+          })
+          .filter(index => index !== -1)
+          .sort((a, b) => a - b);
+
+        if (visibleRows.length > 0) {
+          const firstVisible = visibleRows[0] + 1; // Convert to 1-based
+          const lastVisible = visibleRows[visibleRows.length - 1] + 1;
+          
+          setVisibleRange({ start: firstVisible, end: lastVisible });
+          setVisibleCount(visibleRows.length);
+        }
+      },
+      {
+        root: parentRef.current,
+        threshold: 0.5 // Row must be 50% visible to count
+      }
+    );
+
+    // Observe all row elements
+    const rows = parentRef.current.querySelectorAll('[data-image-id]');
+    rows.forEach(row => observer.observe(row));
+
+    return () => observer.disconnect();
+  }, [images, rowVirtualizer.getVirtualItems()]);
 
   // Ensure selected item is visible (no forced centering)
   useEffect(() => {
@@ -65,201 +107,224 @@ export function ImageTable({
    * Global key-handling (arrow nav + copy/paste/clear)
    * Register once and always fetch fresh data from the store inside.
    * ------------------------------------------------------------------ */
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMeta = e.metaKey || e.ctrlKey;
+  const handleKeyDown = React.useCallback((e: KeyboardEvent) => {
+    console.log('Key pressed:', e.key, 'Meta:', e.metaKey || e.ctrlKey); // Debug log
+    
+    const isMeta = e.metaKey || e.ctrlKey;
 
-      // If focus is inside an input/textarea and user presses navigation keys, blur first
-      const tag = (e.target as HTMLElement).tagName.toLowerCase();
-      if (tag === 'input' || tag === 'textarea') {
-        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-          (e.target as HTMLElement).blur();
-          // allow navigation to continue
-        } else {
-          return; // other keys handled by the input itself
+    // If focus is inside an input/textarea and user presses navigation keys, blur first
+    const tag = (e.target as HTMLElement).tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea') {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        (e.target as HTMLElement).blur();
+        // allow navigation to continue
+      } else {
+        return; // other keys handled by the input itself
+      }
+    }
+
+    /* ----- Open Group Editor (⌘/Ctrl + G) ------------------- */
+    if (isMeta && e.key.toLowerCase() === 'g') {
+      e.preventDefault(); // Prevent browser shortcuts
+      console.log('Ctrl+G pressed'); // Debug log
+      
+      // Get target IDs - either selection or current row
+      const targetIds: string[] = selection.selectedIds.size > 0
+        ? Array.from(selection.selectedIds)
+        : selectedImage?.id
+          ? [selectedImage.id]
+          : [];
+
+      console.log('Target IDs:', targetIds); // Debug log
+      
+      // Open the first selected/active row's group editor
+      if (targetIds.length > 0) {
+        const firstId = targetIds[0];
+        const otherIds = targetIds.slice(1);
+        const editorRef = groupEditorRefs.current.get(firstId);
+        console.log('Editor ref found:', !!editorRef?.current); // Debug log
+        if (editorRef?.current) {
+          setActiveEditorState({ id: firstId, additionalIds: otherIds });
+          editorRef.current.open();
         }
       }
+      return;
+    }
 
-      const storeState = useImageStore.getState();
-      const allImages = storeState.images as Image[];
-      const selState = storeState.selection;
-      const selectedImage = storeState.selectedImage;
-
-      /* ----- Copy (⌘/Ctrl + C) ----------------------------------- */
-      if (isMeta && e.key.toLowerCase() === 'c') {
-        const sourceId: string | undefined = selState.lastSelectedId || selectedImage?.id;
-        if (!sourceId) return;
-        const srcImg = allImages.find((img: Image) => img.id === sourceId);
-        if (srcImg?.group !== undefined) {
-          copiedGroupRef.current = srcImg.group || '';
-          navigator.clipboard?.writeText(srcImg.group || '').catch(() => {/* ignore */});
-          
-          // Clear selection after copy
-          useImageStore.setState({
-            selection: {
-              selectedIds: new Set(),
-              lastSelectedId: sourceId,
-            },
-          });
-        }
-        return;
-      }
-
-      /* ----- Paste (⌘/Ctrl + V) ---------------------------------- */
-      if (isMeta && e.key.toLowerCase() === 'v') {
-        const group = copiedGroupRef.current;
-        if (group == null) return; // null means nothing copied yet
-
-        const targetIds: string[] = selState.selectedIds.size > 0
-          ? Array.from(selState.selectedIds)
-          : selectedImage?.id
-            ? [selectedImage.id]
-            : [];
-
-        // Multi-row paste: sequential backend requests to ensure unique suffixes
-        if (targetIds.length > 1 && group) {
-          (async () => {
-            for (const id of targetIds) {
-              // Mark as processing optimistically
-              storeState.updateImage(id, { group, groupingStatus: 'processing' });
-
-              try {
-                const updated = await fetch(`/api/images/${id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ group }),
-                }).then(res => res.ok ? res.json() : Promise.reject(res));
-
-                storeState.updateImage(id, {
-                  group: updated.group,
-                  newName: updated.newName,
-                  groupingStatus: 'complete',
-                  groupingConfidence: 1.0,
-                });
-              } catch (err) {
-                console.error('Failed to update group:', err);
-                storeState.updateImage(id, { groupingStatus: 'error', groupingConfidence: 0 });
-              }
-            }
-          })();
-        } else {
-          // Single row operation - let backend handle naming
-          targetIds.forEach((id) => {
-            storeState.updateImage(id, { group, groupingStatus: group ? 'complete' : 'pending', groupingConfidence: group ? 1.0 : 0 });
-
-            fetch(`/api/images/${id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ group }),
-            })
-              .then((res) => res.ok ? res.json() : Promise.reject(res))
-              .then((updated) => {
-                storeState.updateImage(id, {
-                  group: updated.group,
-                  newName: updated.newName,
-                  groupingStatus: updated.group ? 'complete' : 'pending',
-                  groupingConfidence: updated.group ? 1.0 : 0,
-                });
-              })
-              .catch((err) => console.error('Failed to update group:', err));
-          });
-        }
+    /* ----- Copy (⌘/Ctrl + C) ----------------------------------- */
+    if (isMeta && e.key.toLowerCase() === 'c') {
+      const sourceId: string | undefined = selection.lastSelectedId || selectedImage?.id;
+      if (!sourceId) return;
+      const srcImg = images.find((img: Image) => img.id === sourceId);
+      if (srcImg?.group !== undefined) {
+        copiedGroupRef.current = srcImg.group || '';
+        navigator.clipboard?.writeText(srcImg.group || '').catch(() => {/* ignore */});
         
-        // Clear selection after paste
+        // Clear selection after copy
         useImageStore.setState({
           selection: {
             selectedIds: new Set(),
-            lastSelectedId: selectedImage?.id || null,
+            lastSelectedId: sourceId,
           },
         });
-        return;
       }
+      return;
+    }
 
-      /* ----- Clear selection (Escape) --------------------------- */
-      if (e.key === 'Escape') {
-        useImageStore.setState({
-          selection: {
-            selectedIds: new Set(),
-            lastSelectedId: selectedImage?.id || null,
-          },
-        });
-        return;
-      }
+    /* ----- Paste (⌘/Ctrl + V) ---------------------------------- */
+    if (isMeta && e.key.toLowerCase() === 'v') {
+      const group = copiedGroupRef.current;
+      if (group == null) return; // null means nothing copied yet
 
-      /* ----- Clear group (Backspace/Delete) --------------------- */
-      if (e.key === 'Backspace' || e.key === 'Delete') {
-        const targetIds: string[] = selState.selectedIds.size > 0
-          ? Array.from(selState.selectedIds)
-          : selectedImage?.id
-            ? [selectedImage.id]
-            : [];
+      const targetIds: string[] = selection.selectedIds.size > 0
+        ? Array.from(selection.selectedIds)
+        : selectedImage?.id
+          ? [selectedImage.id]
+          : [];
 
-        if (targetIds.length === 0) return;
+      // Multi-row paste: sequential backend requests to ensure unique suffixes
+      if (targetIds.length > 1 && group) {
+        (async () => {
+          for (const id of targetIds) {
+            // Mark as processing optimistically
+            useImageStore.getState().updateImage(id, { group, groupingStatus: 'processing' });
 
+            try {
+              const updated = await fetch(`/api/images/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ group }),
+              }).then(res => res.ok ? res.json() : Promise.reject(res));
+
+              useImageStore.getState().updateImage(id, {
+                group: updated.group,
+                newName: updated.newName,
+                groupingStatus: 'complete',
+                groupingConfidence: 1.0,
+              });
+            } catch (err) {
+              console.error('Failed to update group:', err);
+              useImageStore.getState().updateImage(id, { groupingStatus: 'error', groupingConfidence: 0 });
+            }
+          }
+        })();
+      } else {
+        // Single row operation - let backend handle naming
         targetIds.forEach((id) => {
-          // Optimistic clear
-          storeState.updateImage(id, { group: '', newName: '', groupingStatus: 'pending', groupingConfidence: 0 });
+          useImageStore.getState().updateImage(id, { group, groupingStatus: group ? 'complete' : 'pending', groupingConfidence: group ? 1.0 : 0 });
 
           fetch(`/api/images/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ group: '', newName: '' }),
+            body: JSON.stringify({ group }),
           })
             .then((res) => res.ok ? res.json() : Promise.reject(res))
             .then((updated) => {
-              storeState.updateImage(id, {
-                group: updated.group || '',
-                newName: '', // Always clear newName when group is cleared
-                groupingStatus: 'pending',
-                groupingConfidence: 0,
+              useImageStore.getState().updateImage(id, {
+                group: updated.group,
+                newName: updated.newName,
+                groupingStatus: updated.group ? 'complete' : 'pending',
+                groupingConfidence: updated.group ? 1.0 : 0,
               });
             })
-            .catch(() => {/* errors already handled */});
+            .catch((err) => console.error('Failed to update group:', err));
         });
-        
-        // Clear selection after delete/backspace
-        useImageStore.setState({
-          selection: {
-            selectedIds: new Set(),
-            lastSelectedId: selectedImage?.id || null,
-          },
-        });
-        return;
       }
+      
+      // Clear selection after paste
+      useImageStore.setState({
+        selection: {
+          selectedIds: new Set(),
+          lastSelectedId: selectedImage?.id || null,
+        },
+      });
+      return;
+    }
 
-      /* ----- Arrow navigation (↑ / ↓) --------------------------- */
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    /* ----- Clear selection (Escape) --------------------------- */
+    if (e.key === 'Escape') {
+      useImageStore.setState({
+        selection: {
+          selectedIds: new Set(),
+          lastSelectedId: selectedImage?.id || null,
+        },
+      });
+      return;
+    }
 
-      if (allImages.length === 0) return;
+    /* ----- Clear group (Backspace/Delete) --------------------- */
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      const targetIds: string[] = selection.selectedIds.size > 0
+        ? Array.from(selection.selectedIds)
+        : selectedImage?.id
+          ? [selectedImage.id]
+          : [];
+
+      if (targetIds.length === 0) return;
+
+      targetIds.forEach((id) => {
+        // Optimistic clear
+        useImageStore.getState().updateImage(id, { group: '', newName: '', groupingStatus: 'pending', groupingConfidence: 0 });
+
+        fetch(`/api/images/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ group: '', newName: '' }),
+        })
+          .then((res) => res.ok ? res.json() : Promise.reject(res))
+          .then((updated) => {
+            useImageStore.getState().updateImage(id, {
+              group: updated.group || '',
+              newName: '', // Always clear newName when group is cleared
+              groupingStatus: 'pending',
+              groupingConfidence: 0,
+            });
+          })
+          .catch(() => {/* errors already handled */});
+      });
+      
+      // Clear selection after delete/backspace
+      useImageStore.setState({
+        selection: {
+          selectedIds: new Set(),
+          lastSelectedId: selectedImage?.id || null,
+        },
+      });
+      return;
+    }
+
+    /* ----- Arrow navigation (↑ / ↓) --------------------------- */
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (images.length === 0) return;
 
       const currentIndex = selectedImage
-        ? allImages.findIndex((img: Image) => img.id === selectedImage.id)
+        ? images.findIndex((img: Image) => img.id === selectedImage.id)
         : -1;
 
       let newIndex = currentIndex;
 
       if (e.key === 'ArrowUp') newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
-      else if (e.key === 'ArrowDown') newIndex = currentIndex < allImages.length - 1 ? currentIndex + 1 : allImages.length - 1;
+      else if (e.key === 'ArrowDown') newIndex = currentIndex < images.length - 1 ? currentIndex + 1 : images.length - 1;
 
       if (newIndex !== currentIndex) {
-        const newImg = allImages[newIndex];
+        const newImg = images[newIndex];
         onImageSelect(newImg);
 
         if (e.shiftKey) {
           // Shift+Arrow: Add to selection range
-          const anchorIndex = selState.lastSelectedId 
-            ? allImages.findIndex((img: Image) => img.id === selState.lastSelectedId)
+          const anchorIndex = selection.lastSelectedId 
+            ? images.findIndex((img: Image) => img.id === selection.lastSelectedId)
             : currentIndex;
           
           if (anchorIndex !== -1) {
             const [start, end] = anchorIndex < newIndex ? [anchorIndex, newIndex] : [newIndex, anchorIndex];
-            const rangeIds = allImages.slice(start, end + 1).map((img: Image) => img.id);
+            const rangeIds = images.slice(start, end + 1).map((img: Image) => img.id);
             const newSelected = new Set<string>(rangeIds);
 
             useImageStore.setState({
               selection: {
                 selectedIds: newSelected,
-                lastSelectedId: selState.lastSelectedId || newImg.id,
+                lastSelectedId: selection.lastSelectedId || newImg.id,
               },
             });
           }
@@ -280,11 +345,14 @@ export function ImageTable({
           document.activeElement.blur();
         }
       }
-    };
+    }
+  }, [images, onImageSelect, selection, selectedImage]);
 
+  // Set up keyboard event listener
+  useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [handleKeyDown]);
 
   /**
    * Handles row click taking into account modifier keys for selection
@@ -347,7 +415,7 @@ export function ImageTable({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 h-full">
+    <div className="flex-1 flex flex-col min-h-0 h-full" data-image-table>
       {/* Horizontal scroll container */}
       <div className="flex-1 min-h-0 overflow-x-auto linear-scrollbar">
         <div className="min-w-[1050px]">
@@ -371,6 +439,12 @@ export function ImageTable({
                 const image = images[virtualItem.index];
                 const isSelected = selection.selectedIds.has(image.id);
                 const isActiveSelection = image.id === selectedImageId;
+                
+                // Only pass additionalIds to the active editor
+                const additionalIds = 
+                  activeEditorState.id === image.id 
+                    ? activeEditorState.additionalIds 
+                    : [];
 
                 return (
                   <div
@@ -389,6 +463,8 @@ export function ImageTable({
                       isSelected={isSelected}
                       isActiveSelection={isActiveSelection}
                       onClick={(e) => handleRowClick(e, image)}
+                      onGroupEditorRef={handleGroupEditorRef}
+                      additionalImageIds={additionalIds}
                     />
                   </div>
                 );

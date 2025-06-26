@@ -6,6 +6,7 @@ import { GroupEditor } from '@/components/GroupEditor';
 import { InlineNameEditor } from '@/components/InlineNameEditor';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Copy, Check } from 'lucide-react';
+import { ValidationDetails } from '@/components/ui/ValidationIcon';
 
 export function Sidebar() {
   const { selectedImage, images, updateImage } = useImageStore();
@@ -304,6 +305,13 @@ export function Sidebar() {
                 )}
               </div>
             </div>
+            
+            {/* Code Validation Details */}
+            {selectedImage.code && (
+              <div className="mt-2">
+                <ValidationDetails code={selectedImage.code} />
+              </div>
+            )}
           </div>
 
           <div>
@@ -372,6 +380,7 @@ export function Sidebar() {
               geminiConfidence={selectedImage.geminiConfidence}
               groupingConfidence={selectedImage.groupingConfidence}
               hasCode={!!selectedImage.code}
+              code={selectedImage.code}
             />
           </div>
           {/* Retry Gemini button */}

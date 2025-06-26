@@ -71,7 +71,7 @@ export interface UploadResponse {
 }
 
 // Filter options for the table
-export type FilterOption = 'all' | 'unknown' | 'conflict';
+export type FilterOption = 'all' | 'unknown' | 'conflict' | 'invalid_codes';
 
 // Table column definitions
 export interface TableColumn {
