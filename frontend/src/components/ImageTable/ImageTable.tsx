@@ -112,14 +112,20 @@ export function ImageTable({
     
     const isMeta = e.metaKey || e.ctrlKey;
 
-    // If focus is inside an input/textarea and user presses navigation keys, blur first
+    // If focus is inside an input/textarea, handle carefully
     const tag = (e.target as HTMLElement).tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea') {
+    const isInInput = tag === 'input' || tag === 'textarea' || (e.target as HTMLElement).contentEditable === 'true';
+    
+    if (isInInput) {
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        // Navigation keys: blur the input and allow navigation to continue
         (e.target as HTMLElement).blur();
-        // allow navigation to continue
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
+        // Backspace/Delete while typing: let the input handle it, don't clear groups
+        return;
       } else {
-        return; // other keys handled by the input itself
+        // Other keys: let the input handle them normally
+        return;
       }
     }
 

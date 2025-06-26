@@ -202,8 +202,8 @@ router.put('/:id', async (req, res) => {
         groupingStatus = 'complete';
         groupingConfidence = 1.0;
       } else {
-        // Group is being removed
-        finalNewName = image.originalName;
+        // Group is being removed - clear the name too
+        finalNewName = '';
         groupingStatus = 'pending';
         groupingConfidence = 0;
       }

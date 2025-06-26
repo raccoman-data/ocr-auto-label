@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { useImageStore } from '@/stores/imageStore';
-import { Check, ChevronsUpDown, Edit2 } from 'lucide-react';
+import { Check, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Command,
   CommandEmpty,
@@ -37,24 +36,12 @@ export const GroupEditor = forwardRef<GroupEditorHandle, GroupEditorProps>(({
 }: GroupEditorProps, ref) => {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(currentGroup);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(currentGroup);
-  const inputRef = useRef<HTMLInputElement>(null);
   const { updateImage, images } = useImageStore();
 
   // Sync local value when prop changes (e.g., external update)
   React.useEffect(() => {
     setValue(currentGroup);
-    setEditValue(currentGroup);
   }, [currentGroup]);
-
-  // Focus input when entering edit mode
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
 
   // Expose open method via ref
   useImperativeHandle(ref, () => ({
@@ -123,35 +110,6 @@ export const GroupEditor = forwardRef<GroupEditorHandle, GroupEditorProps>(({
     }
   };
 
-  // Handle inline editing
-  const handleEditStart = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsEditing(true);
-    setEditValue(value);
-  };
-
-  const handleEditCancel = () => {
-    setIsEditing(false);
-    setEditValue(value);
-  };
-
-  const handleEditSave = async () => {
-    if (editValue.trim() !== value) {
-      await handleGroupChange(editValue.trim());
-    }
-    setIsEditing(false);
-  };
-
-  const handleEditKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleEditSave();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      handleEditCancel();
-    }
-  };
-
   // Helper to get thumbnail URL for the "main" image of a group
   const getGroupThumbnail = (group: string): string | null => {
     if (!group) return null;
@@ -163,23 +121,6 @@ export const GroupEditor = forwardRef<GroupEditorHandle, GroupEditorProps>(({
     }
     return null;
   };
-
-  // If editing, show inline input
-  if (isEditing) {
-    return (
-      <div className="flex items-center gap-1">
-        <Input
-          ref={inputRef}
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={handleEditKeyDown}
-          onBlur={handleEditSave}
-          className="h-8 text-xs"
-          placeholder="Enter group name..."
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="flex items-center gap-1 group/editor">
@@ -202,113 +143,107 @@ export const GroupEditor = forwardRef<GroupEditorHandle, GroupEditorProps>(({
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="flex-1 justify-between text-xs h-8 px-2"
+            className="flex-1 justify-between text-xs h-8 px-2 group/button"
           >
-            {value ? (
-              <span 
-                className="px-2 py-1 text-primary rounded-full text-xs font-medium truncate"
-                style={{ backgroundColor: 'hsl(var(--primary) / 0.1)' }}
-              >
-                {value}
-              </span>
-            ) : (
-              <span className="text-muted-foreground italic">Select group...</span>
-            )}
-            <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-      <PopoverContent className="w-64 p-0 max-h-80">
-        <Command>
-          <CommandInput 
-            placeholder="Search or create group..." 
-            className="text-xs"
-            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-              if (e.key === 'Enter') {
-                const inputValue = e.currentTarget.value;
-                if (inputValue && !allGroups.includes(inputValue)) {
-                  handleGroupChange(inputValue);
-                }
-              }
-            }}
-          />
-          <CommandEmpty>
-            <div className="p-2 text-xs">
-              <p className="text-muted-foreground mb-2">No groups found.</p>
-              <Button 
-                size="sm" 
-                className="w-full text-xs h-7"
-                onClick={() => {
-                  const input = document.querySelector('[placeholder="Search or create group..."]') as HTMLInputElement;
-                  if (input?.value) {
-                    handleGroupChange(input.value);
-                  }
-                }}
-              >
-                Create new group
-              </Button>
-            </div>
-          </CommandEmpty>
-          <CommandGroup className="max-h-60 overflow-y-auto">
-            {allGroups.map((group) => (
-              <CommandItem
-                key={group}
-                value={group}
-                onSelect={() => handleGroupChange(group)}
-                className="text-xs flex items-center"
-              >
-                {(() => {
-                  const thumb = getGroupThumbnail(group);
-                  return thumb ? (
-                    <img
-                      src={thumb}
-                      alt={group}
-                      className="w-8 h-8 rounded object-cover mr-2 border"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 mr-2 rounded bg-muted border" />
-                  );
-                })()}
-                <Check
-                  className={cn(
-                    "mr-1 h-3 w-3",
-                    value === group ? "opacity-100" : "opacity-0"
-                  )}
-                />
+            <div className="flex items-center flex-1 min-w-0">
+              {value ? (
                 <span 
                   className="px-2 py-1 text-primary rounded-full text-xs font-medium truncate"
                   style={{ backgroundColor: 'hsl(var(--primary) / 0.1)' }}
                 >
-                  {group}
+                  {value}
                 </span>
+              ) : (
+                <span className="text-muted-foreground italic">Select group...</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 ml-2">
+              <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+            </div>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-0 max-h-80">
+          <Command>
+            <CommandInput 
+              placeholder="Search or create group..." 
+              className="text-xs"
+              onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                if (e.key === 'Enter') {
+                  const inputValue = e.currentTarget.value;
+                  if (inputValue && !allGroups.includes(inputValue)) {
+                    handleGroupChange(inputValue);
+                  }
+                }
+              }}
+            />
+            <CommandEmpty>
+              <div className="p-2 text-xs">
+                <p className="text-muted-foreground mb-2">No groups found.</p>
+                <Button 
+                  size="sm" 
+                  className="w-full text-xs h-7"
+                  onClick={() => {
+                    const input = document.querySelector('[placeholder="Search or create group..."]') as HTMLInputElement;
+                    if (input?.value) {
+                      handleGroupChange(input.value);
+                    }
+                  }}
+                >
+                  Create new group
+                </Button>
+              </div>
+            </CommandEmpty>
+            <CommandGroup className="max-h-60 overflow-y-auto">
+              {allGroups.map((group) => (
+                <CommandItem
+                  key={group}
+                  value={group}
+                  onSelect={() => handleGroupChange(group)}
+                  className="text-xs flex items-center"
+                >
+                  {(() => {
+                    const thumb = getGroupThumbnail(group);
+                    return thumb ? (
+                      <img
+                        src={thumb}
+                        alt={group}
+                        className="w-8 h-8 rounded object-cover mr-2 border"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 mr-2 rounded bg-muted border" />
+                    );
+                  })()}
+                  <Check
+                    className={cn(
+                      "mr-1 h-3 w-3",
+                      value === group ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  <span 
+                    className="px-2 py-1 text-primary rounded-full text-xs font-medium truncate"
+                    style={{ backgroundColor: 'hsl(var(--primary) / 0.1)' }}
+                  >
+                    {group}
+                  </span>
+                </CommandItem>
+              ))}
+
+              {/* Visual separator */}
+              <CommandSeparator className="my-1" />
+
+              {/* Clear group action at the bottom */}
+              <CommandItem
+                key="__clear__"
+                value="__clear__"
+                onSelect={() => handleGroupChange('')}
+                className="text-xs flex items-center text-destructive focus:text-destructive"
+              >
+                <span className="text-left w-full">Clear group</span>
               </CommandItem>
-            ))}
-
-            {/* Visual separator */}
-            <CommandSeparator className="my-1" />
-
-            {/* Clear group action at the bottom */}
-            <CommandItem
-              key="__clear__"
-              value="__clear__"
-              onSelect={() => handleGroupChange('')}
-              className="text-xs flex items-center text-destructive focus:text-destructive"
-            >
-              <span className="text-left w-full">Clear group</span>
-            </CommandItem>
-          </CommandGroup>
-        </Command>
-      </PopoverContent>
-    </Popover>
-    
-    {/* Edit button - shows on hover */}
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-8 w-8 p-0 opacity-0 group-hover/editor:opacity-100 transition-opacity"
-      onClick={handleEditStart}
-    >
-      <Edit2 className="h-3 w-3" />
-    </Button>
-  </div>
+            </CommandGroup>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }); 

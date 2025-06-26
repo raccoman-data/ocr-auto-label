@@ -150,6 +150,9 @@ export function TableRow({
         </div>
       </div>
       
+      {/* Spacer between Original Name and New Name */}
+      <div className="w-6 linear-cell"></div>
+      
       {/* New Name Column */}
       <div className="flex-1 linear-cell min-w-[16rem] -ml-4">
         <InlineNameEditor
@@ -162,8 +165,11 @@ export function TableRow({
         />
       </div>
       
+      {/* Spacer between New Name and Group */}
+      <div className="w-6 linear-cell"></div>
+      
       {/* Group Column */}
-      <div className="w-56 linear-cell -ml-2 -mr-[-10px] relative">
+      <div className="w-56 linear-cell -ml-2 relative">
         {/* Combobox-style editor for selecting/creating groups */}
         <GroupEditor 
           ref={groupEditorRef}

@@ -45,13 +45,19 @@ export function TableHeader() {
         <SortButton field="originalName">Original Name</SortButton>
       </div>
       
+      {/* Spacer between Original Name and New Name */}
+      <div className="w-6 linear-cell"></div>
+      
       {/* New Name Column */}
       <div className="flex-1 linear-cell min-w-[16rem] -ml-4">
         <SortButton field="newName">New Name</SortButton>
       </div>
       
+      {/* Spacer between New Name and Group */}
+      <div className="w-6 linear-cell"></div>
+      
       {/* Group Column */}
-      <div className="w-56 linear-cell -ml-2 -mr-2">
+      <div className="w-56 linear-cell -ml-2">
         <SortButton field="group">Group</SortButton>
       </div>
       
@@ -61,7 +67,7 @@ export function TableHeader() {
       </div>
       
       {/* Status Column */}
-      <div className="w-24 linear-cell text-right pr-2">
+      <div className="w-32 linear-cell flex justify-end pr-2">
         Status
       </div>
     </div>

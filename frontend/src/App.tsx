@@ -112,7 +112,7 @@ function App() {
             </div>
             
             {/* Sidebar - fixed width, starts below toolbar */}
-            <div className="w-[28rem] border-l border-border bg-card">
+            <div className="w-[26rem] border-l border-border bg-card">
               <Sidebar />
             </div>
           </div>
