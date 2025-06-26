@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs/promises';
 import sharp from 'sharp';
+import { isValidSampleCode as centralizedValidation, generateGeminiPromptPatterns } from '../lib/sampleCodePatterns';
 
 export interface GeminiResult {
   code: string | null;
@@ -42,26 +43,10 @@ async function preprocessImageForOCR(imageBuffer: Buffer): Promise<Buffer> {
 
 /**
  * Validate if a sample code follows the expected pattern
- * Valid patterns based on the Gemini prompt specification:
- * 1. MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12] 
- * 2. MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
- * 3. KEN.0.[1-2].[1-9].[1-8].[1-11].[1-12]
+ * Uses centralized pattern validation from sampleCodePatterns.ts
  */
 export function isValidSampleCode(code: string | null): boolean {
-  if (!code) return false;
-  
-  const trimmedCode = code.trim().toUpperCase();
-  
-  // Pattern 1: MWI.1.[1-3].[1-24].[1-10][A-D].[1-30].[1-12]
-  const mwi1Pattern = /^MWI\.1\.([1-3])\.([1-9]|1[0-9]|2[0-4])\.([1-9]|10)[A-D]\.([1-9]|1[0-9]|2[0-9]|30)\.([1-9]|1[0-2])$/;
-  
-  // Pattern 2: MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
-  const mwi0Pattern = /^MWI\.0\.([1-3])\.([1-6])\.([1-9]|1[0-3])\.([1-9]|1[0-9]|2[0-7])\.([1-9]|1[0-2])$/;
-  
-  // Pattern 3: KEN.0.[1-2].[1-9].[1-8].[1-11].[1-12]
-  const ken0Pattern = /^KEN\.0\.([1-2])\.([1-9])\.([1-8])\.([1-9]|1[0-1])\.([1-9]|1[0-2])$/;
-  
-  return mwi1Pattern.test(trimmedCode) || mwi0Pattern.test(trimmedCode) || ken0Pattern.test(trimmedCode);
+  return centralizedValidation(code);
 }
 
 /**
@@ -94,15 +79,7 @@ export async function extractTextFromImage(imagePath: string): Promise<GeminiRes
     const prompt = `You are reading handwritten sample codes on laboratory labels. These codes are CRITICAL for research - accuracy is paramount.
 
 SAMPLE CODE PATTERNS (must match exactly):
-1. MWI.1.[1-3].[1-24].[1-10][A-D].[1-30].[1-12] 
-   Example: MWI.1.2.15.7B.12.8 (exactly 6 periods, 7 segments)
-   Common D/0 case: MWI.1.1.18.1D.7.11 (NOT MWI.1.1.18.10.7.11)
-
-2. MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
-   Example: MWI.0.1.4.10.15.7 (exactly 5 periods, 6 segments)
-
-3. KEN.0.[1-2].[1-9].[1-8].[1-11].[1-12]
-   Example: KEN.0.2.3.5.8.11 (exactly 5 periods, 6 segments)
+${generateGeminiPromptPatterns()}
 
 CRITICAL READING RULES:
 - Each segment is separated by a PERIOD (.)

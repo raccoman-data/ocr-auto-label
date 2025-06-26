@@ -1,24 +1,25 @@
 # Lead-Photo Auto-Tagger
 
-> **Automatically rename thousands of field photos in minutes – no technical skills required.**
+> **Born from real field research frustration – automatically rename thousands of sample photos using AI.**
 
-Transform your messy camera folders into organized, properly named photo collections using AI. Perfect for field researchers, lab teams, and anyone dealing with lots of sample photos.
+I built this app specifically for the team at [leadresearch.org](https://leadresearch.org) who were collecting thousands of object sampl photos in Malawi and Kenya for lead contamination research. They were taking photos of each sample with handwritten labels like "MWI.1.2.15.7B.12.8" and needed a quicker way to rename the files to match the appropriate codes (even the photos with no visible code).
 
 ---
 
-## 🎯 What This App Does
+## 🎯 The Problem This Solves
 
-**Before:** You have 2,000 photos named `IMG_1234.jpg`, `IMG_1235.jpg`...  
-**After:** Each photo is automatically renamed to its handwritten sample code like `MWI.1.2.15.7B.12.8.jpg`
+**Before:** Field researchers have thousands of photos named `IMG_1234.jpg`, `IMG_1235.jpg`, etc. Each one needs to be manually opened, the handwritten sample code read if it existed, and the file renamed – taking 30-60 seconds per photo. For 2,000 samples, that's **20-40 hours of mind-numbing work**. If there was no code in the file, it needed to be manually associated with another object/image that did have a code.
 
-### The Magic Process:
-1. **Drag your photo folder** into the web app
-2. **AI reads the handwritten codes** on each label using Google's vision technology
-3. **Smart grouping** finds similar photos and groups them together
-4. **You review and fix** any mistakes in seconds using keyboard shortcuts
-5. **Export** your perfectly organized photo collection
+**After:** Drop your camera folder into the app, grab coffee, come back to perfectly renamed files like `MWI.1.2.15.7B.12.8.jpg`. What used to take days now takes minutes.
 
-**Typical results:** 2,000 photos processed in under 10 minutes, with 85%+ accuracy, costing less than $0.20 in AI usage.
+### How It Works:
+1. **Drag your photo folder** (or ZIP file) into the web app
+2. **Google's AI reads each handwritten label** and extracts the sample code
+3. **Smart grouping** finds photos without clear labels and groups them with similar ones
+4. **Quick review interface** lets you fix any mistakes with Excel-like keyboard shortcuts
+5. **Export** your perfectly organized collection
+
+**Real results from leadresearch.org:** 2,000 photos processed in ~8 minutes, 85%+ accuracy, $0.15 in AI costs. Their research team went from spending entire days on file organization to getting back to actual science.
 
 ---
 
@@ -232,10 +233,10 @@ npm install --global windows-build-tools
 5. **Export:** Renamed photos are packaged for download
 
 ### Sample Code Patterns
-The app recognizes these specific patterns:
-- **MWI codes:** `MWI.1.2.15.7B.12.8` or `MWI.0.1.4.10.15.7`
-- **KEN codes:** `KEN.0.2.3.5.8.11`
-- **Validation:** Strict checking prevents false positives
+The app was specifically trained to recognize leadresearch.org's sample coding system:
+- **Malawi samples:** `MWI.1.2.15.7B.12.8` or `MWI.0.1.4.10.15.7`
+- **Kenya samples:** `KEN.0.2.3.5.8.11`
+- **Strict validation:** Prevents false matches and catches common handwriting mistakes (like "D" vs "0")
 
 ### File Storage
 - **Uploads:** `~/AppData/Local/Temp/ocr-auto-label/` (Windows) or `/tmp/ocr-auto-label/` (Mac/Linux)

@@ -7,24 +7,7 @@ import { useImageStore } from '@/stores/imageStore';
 import { GroupEditorHandle } from '@/components/GroupEditor';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { deleteImage } from '@/lib/api';
-
-// Detailed validation function (matching backend logic)
-function isValidSampleCode(code: string | null): boolean {
-  if (!code) return false;
-  
-  const trimmedCode = code.trim().toUpperCase();
-  
-  // Pattern 1: MWI.1.[1-3].[1-24].[1-10][A-D].[1-30].[1-12]
-  const mwi1Pattern = /^MWI\.1\.([1-3])\.([1-9]|1[0-9]|2[0-4])\.([1-9]|10)[A-D]\.([1-9]|1[0-9]|2[0-9]|30)\.([1-9]|1[0-2])$/;
-  
-  // Pattern 2: MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
-  const mwi0Pattern = /^MWI\.0\.([1-3])\.([1-6])\.([1-9]|1[0-3])\.([1-9]|1[0-9]|2[0-7])\.([1-9]|1[0-2])$/;
-  
-  // Pattern 3: KEN.0.[1-2].[1-9].[1-8].[1-11].[1-12]
-  const ken0Pattern = /^KEN\.0\.([1-2])\.([1-9])\.([1-8])\.([1-9]|1[0-1])\.([1-9]|1[0-2])$/;
-  
-  return mwi1Pattern.test(trimmedCode) || mwi0Pattern.test(trimmedCode) || ken0Pattern.test(trimmedCode);
-}
+import { isValidSampleCode } from '@/lib/sampleCodePatterns';
 
 interface ImageTableProps {
   images: Image[];
