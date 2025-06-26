@@ -20,7 +20,8 @@
     "db:studio": "cd backend && npm run db:studio",
     "test": "npm run test:frontend && npm run test:backend",
     "test:frontend": "cd frontend && npm run test",
-    "test:backend": "cd backend && npm run test"
+    "test:backend": "cd backend && npm run test",
+    "cleanup": "cd backend && npm run cleanup"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

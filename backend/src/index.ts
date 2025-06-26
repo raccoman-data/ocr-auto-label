@@ -7,6 +7,7 @@ import compression from 'compression';
 import path from 'path';
 import os from 'os';
 import { PrismaClient } from '@prisma/client';
+import fs from 'fs/promises';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -146,16 +147,53 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-// Start server
-app.listen(PORT, () => {
+// Start the server
+const server = app.listen(PORT, async () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
   console.log(`📁 Files stored in: ${TEMP_DIR}`);
   console.log(`💡 Tip: Files are stored in temp directory and will be cleaned up on system restart`);
+  
+  // Run startup cleanup
+  await cleanupLeftoverExportFiles();
 });
 
 // Add cleanup function for development
 export function cleanupTempFiles() {
   console.log(`🧹 Cleaning up temp files in: ${TEMP_DIR}`);
   // This will be called on graceful shutdown
+}
+
+// Cleanup any leftover export files from previous runs
+async function cleanupLeftoverExportFiles() {
+  try {
+    console.log('🧹 Cleaning up leftover export files from previous runs...');
+    const tempDir = os.tmpdir();
+    const files = await fs.readdir(tempDir);
+    
+    let cleanedCount = 0;
+    for (const file of files) {
+      // Match our export temp file pattern: export-timestamp-imageid-filename
+      if (file.startsWith('export-') || file.includes('sample_photos.zip')) {
+        try {
+          const filePath = path.join(tempDir, file);
+          const stats = await fs.stat(filePath);
+          
+          // Delete files older than 1 hour
+          const oneHourAgo = Date.now() - (60 * 60 * 1000);
+          if (stats.mtime.getTime() < oneHourAgo) {
+            await fs.unlink(filePath);
+            cleanedCount++;
+          }
+        } catch (err) {
+          // File might have been deleted already, ignore
+        }
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log(`🧹 Cleaned up ${cleanedCount} leftover export files`);
+    }
+  } catch (error) {
+    console.warn('Warning: Failed to cleanup leftover export files:', error);
+  }
 }

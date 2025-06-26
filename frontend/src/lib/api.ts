@@ -149,7 +149,53 @@ export async function healthCheck(): Promise<{ status: string; timestamp: string
   return apiRequest<{ status: string; timestamp: string; version: string }>('/health');
 }
 
+// Export all images as a zip file with metadata and CSV
+export async function exportImages(): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/images/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
 
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Export failed with status: ${response.status}`);
+    }
+
+    // Get the filename from the response headers
+    const contentDisposition = response.headers.get('content-disposition');
+    let filename = 'exported-images.zip';
+    
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (filenameMatch && filenameMatch[1]) {
+        filename = filenameMatch[1].replace(/['"]/g, '');
+      }
+    }
+
+    // Convert response to blob and trigger download
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    
+    // Create temporary download link
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Cleanup
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    
+    console.log('✅ Export download started:', filename);
+  } catch (error) {
+    console.error('❌ Export failed:', error);
+    throw error;
+  }
+}
 
 // Transform API response to match our Image interface
 function transformImageData(apiImage: any): Image {

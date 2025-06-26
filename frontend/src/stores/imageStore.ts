@@ -4,9 +4,6 @@ import { Image, FilterOption, SelectionState, DragState } from '@/types';
 import { getImages } from '@/lib/api';
 import { getValidationStatus } from '@/lib/validation';
 
-// SSE connection for real-time updates
-let eventSource: EventSource | null = null;
-
 // Sorting types
 type SortField = 'timestamp' | 'originalName' | 'newName' | 'group';
 type SortOrder = 'asc' | 'desc';
@@ -83,10 +80,6 @@ interface ImageStore {
   // Clear all data immediately
   clearAll: () => void;
   
-  // SSE connection management
-  connectToUpdates: () => void;
-  disconnectFromUpdates: () => void;
-  
   // Duplicate name detection helper
   getDuplicateNames: () => Set<string>;
 }
@@ -96,8 +89,6 @@ const initialDragState: DragState = {
   draggedOver: false,
   files: [],
 };
-
-
 
 const initialSelection: SelectionState = {
   selectedIds: new Set(),
@@ -214,8 +205,6 @@ export const useImageStore = create<ImageStore>()(
       
       resetDragState: () => set({ dragState: initialDragState }),
       
-
-      
       // Sidebar actions
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       
@@ -268,12 +257,23 @@ export const useImageStore = create<ImageStore>()(
         // Apply search
         if (searchQuery.trim()) {
           const query = searchQuery.toLowerCase().trim();
-          filtered = filtered.filter(img => 
-            img.originalName.toLowerCase().includes(query) ||
-            img.newName?.toLowerCase().includes(query) ||
-            img.code?.toLowerCase().includes(query) ||
-            img.group?.toLowerCase().includes(query)
-          );
+          filtered = filtered.filter(img => {
+            // Search across all text fields
+            const searchFields = [
+              img.originalName,
+              img.newName,
+              img.code,
+              img.group,
+              img.otherText,
+              img.objectDesc,
+              // Search through color names as well
+              ...(img.objectColors?.map(color => color.name) || [])
+            ];
+            
+            return searchFields.some(field => 
+              field && field.toLowerCase().includes(query)
+            );
+          });
         }
         
         // Apply sorting
@@ -374,47 +374,6 @@ export const useImageStore = create<ImageStore>()(
           selection: { selectedIds: new Set(), lastSelectedId: null },
           dragState: { isDragging: false, draggedOver: false, files: [] }
         });
-      },
-      
-      // SSE connection management
-      connectToUpdates: () => {
-        if (eventSource) {
-          eventSource.close();
-        }
-        
-        console.log('🔌 Connecting to palette progress stream...');
-        eventSource = new EventSource('/api/upload/palette-progress');
-        
-        eventSource.onopen = () => {
-          console.log('✅ Connected to palette progress stream');
-        };
-        
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log('📡 Received update:', data);
-            
-            if (data.type === 'palette_update' && data.imageId && data.updates) {
-              // Update the specific image with the new data
-              get().updateImage(data.imageId, data.updates);
-            }
-          } catch (error) {
-            console.error('Error parsing SSE message:', error);
-          }
-        };
-        
-        eventSource.onerror = (error) => {
-          console.error('SSE connection error:', error);
-          // Don't automatically reconnect to avoid infinite loops
-        };
-      },
-      
-      disconnectFromUpdates: () => {
-        if (eventSource) {
-          console.log('🔌 Disconnecting from palette progress stream');
-          eventSource.close();
-          eventSource = null;
-        }
       },
     }),
     {

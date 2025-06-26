@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 import { cn } from '@/lib/utils';
 import { Image } from '@/types';
 
@@ -80,13 +80,15 @@ export function StatusDisplay({ status, className }: StatusDisplayProps) {
   return (
     <div 
       className={cn(
-        'inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border',
+        'inline-flex items-center px-2 py-1 text-xs font-medium rounded-md border max-w-[7rem] min-w-0',
         config.className,
         className
       )}
-      title={config.description}
+      title={`${config.text}: ${config.description}`}
     >
-      {config.text}
+      <span className="truncate">
+        {config.text}
+      </span>
     </div>
   );
 } 

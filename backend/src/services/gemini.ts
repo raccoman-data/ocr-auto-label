@@ -19,16 +19,21 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
  */
 async function preprocessImageForOCR(imageBuffer: Buffer): Promise<Buffer> {
   try {
-    return await sharp(imageBuffer)
-      // Enhance contrast to make text more distinct
-      .normalize()
-      // Sharpen the image to make text edges clearer
-      .sharpen(1.5, 1, 2)
-      // Increase contrast further
-      .linear(1.2, -(128 * 1.2) + 128)
-      // Convert back to JPEG with high quality
-      .jpeg({ quality: 95 })
+    const MAX_SIZE_BYTES = 4 * 1024 * 1024; // 4 MB raw (~5.3 MB base64) – under 6 MB API cap
+
+    // Quick resize if too large - minimal processing for speed
+    if (imageBuffer.length > MAX_SIZE_BYTES) {
+      return sharp(imageBuffer)
+        .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+    }
+
+    // If small enough, just convert to JPEG with minimal processing
+    return sharp(imageBuffer)
+      .jpeg({ quality: 85 })
       .toBuffer();
+
   } catch (error) {
     console.warn('Image preprocessing failed, using original:', error);
     return imageBuffer;
@@ -47,8 +52,8 @@ export function isValidSampleCode(code: string | null): boolean {
   
   const trimmedCode = code.trim().toUpperCase();
   
-  // Pattern 1: MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12]
-  const mwi1Pattern = /^MWI\.1\.([1-3])\.([1-9]|1[0-9]|2[0-4])\.([1-9]|10)[A-D]\.([1-9]|1[0-9]|2[0-5])\.([1-9]|1[0-2])$/;
+  // Pattern 1: MWI.1.[1-3].[1-24].[1-10][A-D].[1-30].[1-12]
+  const mwi1Pattern = /^MWI\.1\.([1-3])\.([1-9]|1[0-9]|2[0-4])\.([1-9]|10)[A-D]\.([1-9]|1[0-9]|2[0-9]|30)\.([1-9]|1[0-2])$/;
   
   // Pattern 2: MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
   const mwi0Pattern = /^MWI\.0\.([1-3])\.([1-6])\.([1-9]|1[0-3])\.([1-9]|1[0-9]|2[0-7])\.([1-9]|1[0-2])$/;
@@ -64,6 +69,7 @@ export function isValidSampleCode(code: string | null): boolean {
  * Looks for sample codes (MWI.xxx or KEN.xxx) and other text content
  */
 export async function extractTextFromImage(imagePath: string): Promise<GeminiResult> {
+  const startTime = Date.now();
   try {
     // Check if API key is available
     if (!process.env.GEMINI_API_KEY) {
@@ -71,12 +77,14 @@ export async function extractTextFromImage(imagePath: string): Promise<GeminiRes
     }
 
     // Read and preprocess image file for better OCR accuracy
+    const imageStart = Date.now();
     const originalImageBuffer = await fs.readFile(imagePath);
     const imageBuffer = await preprocessImageForOCR(originalImageBuffer);
+    console.log(`📸 Image processing: ${Date.now() - imageStart}ms`);
     
-    // Get the generative model (Gemini 1.5 Flash - proven reliable for OCR)
+    // Get the generative model (Gemini 2.0 Flash - proven reliable for OCR)
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash',
       generationConfig: {
         temperature: 0, // Deterministic results for OCR
       }
@@ -86,7 +94,7 @@ export async function extractTextFromImage(imagePath: string): Promise<GeminiRes
     const prompt = `You are reading handwritten sample codes on laboratory labels. These codes are CRITICAL for research - accuracy is paramount.
 
 SAMPLE CODE PATTERNS (must match exactly):
-1. MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12] 
+1. MWI.1.[1-3].[1-24].[1-10][A-D].[1-30].[1-12] 
    Example: MWI.1.2.15.7B.12.8 (exactly 6 periods, 7 segments)
 
 2. MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
@@ -128,6 +136,7 @@ Additionally, analyze the PRIMARY OBJECT (not background) and extract its top 3 
 Respond only with JSON:
 {
   "code": "MWI… or KEN… sample code if found, otherwise NA",
+  "codeConfidence": 0.85,
   "otherText": "Any other text visible in the image, otherwise NA", 
   "objectDesc": "Describe the main object in 3 words or less, otherwise NA",
   "objectColors": [
@@ -135,7 +144,17 @@ Respond only with JSON:
     {"color": "#RRGGBB", "name": "descriptive color name"},
     {"color": "#RRGGBB", "name": "descriptive color name"}
   ]
-}`;
+We }
+
+CONFIDENCE SCORING for "codeConfidence" (0.0 to 1.0):
+- 0.9-1.0: Crystal clear, perfectly legible handwriting, all segments clearly visible
+- 0.7-0.9: Clear handwriting with the full code visible with minor ambiguity in 1-2 characters
+- 0.5-0.7: Readable but some characters are unclear or smudged, full code may not be visible
+- 0.3-0.5: Difficult to read, multiple characters uncertain
+- 0.1-0.3: Very poor quality, mostly guessing
+- 0.0: No code visible or completely illegible
+
+Set codeConfidence to 0.0 if code is "NA".`;
 
     // Convert image to base64 for Gemini API
     const imageBase64 = imageBuffer.toString('base64');
@@ -165,10 +184,9 @@ Respond only with JSON:
           throw error; // Re-throw on final attempt
         }
         
-        // Exponential backoff: wait 1s, 2s, 4s
-        const waitTime = Math.pow(2, attempt - 1) * 1000;
-        console.log(`Retrying in ${waitTime}ms...`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
+        // Shorter backoff: only 500ms instead of 1s, 2s, 4s
+        console.log(`Retrying in 500ms...`);
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
 
@@ -185,19 +203,14 @@ Respond only with JSON:
     try {
       const parsed = JSON.parse(jsonText);
       
-      // Clean up the response - convert "NA" to null and calculate confidence
+      // Clean up the response - convert "NA" to null and use Gemini's confidence
       const code = parsed.code === 'NA' ? null : parsed.code;
       const otherText = parsed.otherText === 'NA' ? null : parsed.otherText;
       const objectDesc = parsed.objectDesc === 'NA' ? null : parsed.objectDesc;
       const objectColors = parsed.objectColors && Array.isArray(parsed.objectColors) && parsed.objectColors.length > 0 ? parsed.objectColors : null;
       
-      // Calculate confidence based on what was found
-      let confidence = 0.5; // Base confidence
-      if (code) confidence += 0.4; // High value for finding sample code
-      if (otherText) confidence += 0.1; // Some value for other text
-      if (objectDesc) confidence += 0.1; // Some value for object description
-      if (objectColors) confidence += 0.1; // Some value for object colors
-      confidence = Math.min(confidence, 1.0); // Cap at 1.0
+      // Use Gemini's confidence score for the code detection
+      const confidence = parsed.codeConfidence || 0;
 
       return {
         code,

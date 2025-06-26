@@ -144,7 +144,104 @@ export function isValidZipFile(buffer: Buffer): boolean {
  * Get estimated extraction time based on zip file size
  */
 export function getExtractionEstimate(zipSizeBytes: number): number {
-  // Rough estimate: 1MB per second for extraction + processing
-  const estimatedSeconds = Math.ceil(zipSizeBytes / (1024 * 1024));
-  return Math.max(5, estimatedSeconds); // Minimum 5 seconds
+  // Rough estimate: 50MB per second for extraction + processing on modern SSDs
+  const estimatedSeconds = Math.ceil(zipSizeBytes / (50 * 1024 * 1024));
+  return Math.max(2, estimatedSeconds); // Minimum 2 seconds
+}
+
+/**
+ * Stream-extract images from a zip **file on disk**.
+ *
+ * This variant avoids loading the entire archive into memory. Instead, each
+ * extracted image is passed to the supplied `onFile` callback immediately.
+ * The callback is awaited so you can perform async side-effects (e.g. write
+ * to DB / filesystem) back-pressure-friendly. Returns the total number of
+ * images extracted.
+ */
+export async function extractImagesFromZipFile(
+  zipFilePath: string,
+  onFile: (file: ExtractedFile) => Promise<void>
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let imagesExtracted = 0;
+
+    // Open the zip from a **file path** instead of a buffer
+    yauzl.open(zipFilePath, { lazyEntries: true }, (err: Error | null, zipfile?: ZipFile) => {
+      if (err) {
+        return reject(new Error(`Failed to open zip file: ${err.message}`));
+      }
+
+      if (!zipfile) {
+        return reject(new Error('Failed to create zipfile instance'));
+      }
+
+      const totalEntries = zipfile.entryCount;
+      console.log(`📂 ZIP contains ${totalEntries} entries – starting streamed extraction…`);
+
+      zipfile.on('error', (zipErr: Error) => {
+        reject(new Error(`Zip processing error: ${zipErr.message}`));
+      });
+
+      zipfile.on('end', () => {
+        console.log(`📦 Streamed extraction complete – ${imagesExtracted} images processed`);
+        resolve(imagesExtracted);
+      });
+
+      // Process each entry on demand
+      zipfile.on('entry', (entry: Entry) => {
+        // Skip directories and unwanted files
+        if (entry.fileName.endsWith('/') || !isSupportedImageFile(entry.fileName)) {
+          zipfile.readEntry();
+          return;
+        }
+
+        const baseName = path.basename(entry.fileName);
+        if (baseName.startsWith('.') || baseName.startsWith('__MACOSX')) {
+          zipfile.readEntry();
+          return;
+        }
+
+        // Open stream for the file entry
+        zipfile.openReadStream(entry, async (streamErr: Error | null, readStream?: Readable) => {
+          if (streamErr || !readStream) {
+            console.error(`Error opening stream for ${entry.fileName}:`, streamErr);
+            zipfile.readEntry();
+            return;
+          }
+
+          const chunks: Buffer[] = [];
+          readStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+          readStream.on('end', async () => {
+            try {
+              const buffer = Buffer.concat(chunks);
+              const extractedFile: ExtractedFile = {
+                filename: path.basename(entry.fileName),
+                buffer,
+                lastModified: entry.getLastModDate(),
+                relativePath: entry.fileName,
+              };
+
+              // Let caller handle persistence / further processing
+              await onFile(extractedFile);
+              imagesExtracted += 1;
+            } catch (callbackErr) {
+              console.error(`Callback error for ${entry.fileName}:`, callbackErr);
+            } finally {
+              // Continue regardless of individual file errors
+              zipfile.readEntry();
+            }
+          });
+
+          readStream.on('error', (readErr: Error) => {
+            console.error(`Stream error for ${entry.fileName}:`, readErr);
+            zipfile.readEntry();
+          });
+        });
+      });
+
+      // Kick things off
+      zipfile.readEntry();
+    });
+  });
 } 

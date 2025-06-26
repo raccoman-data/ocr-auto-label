@@ -14,7 +14,7 @@ export interface ValidationResult {
 const SAMPLE_CODE_PATTERNS = {
   MWI_TYPE_1: {
     pattern: /^MWI\.1\.[1-3]\.\d+\.[1-9]\d*[A-D]\.\d+\.\d+$/,
-    description: 'MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12]',
+    description: 'MWI.1.[1-3].[1-24].[1-10][A-D].[1-30].[1-12]',
     segments: 7,
     periods: 6,
     validate: (segments: string[]) => {
@@ -40,7 +40,7 @@ const SAMPLE_CODE_PATTERNS = {
       }
       
       const batchNum = parseInt(batch);
-      if (batchNum < 1 || batchNum > 25) errors.push('Batch must be 1-25');
+      if (batchNum < 1 || batchNum > 30) errors.push('Batch must be 1-30');
       
       const monthNum = parseInt(month);
       if (monthNum < 1 || monthNum > 12) errors.push('Month must be 1-12');
@@ -185,7 +185,7 @@ export function validateSampleCode(code: string | null | undefined): ValidationR
     errors,
     warnings: [
       'Expected patterns:',
-      '• MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12]',
+      '• MWI.1.[1-3].[1-24].[1-10][A-D].[1-30].[1-12]',
       '• MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]',
       '• KEN.0.[1-2].[1-9].[1-8].[1-11].[1-12]'
     ]

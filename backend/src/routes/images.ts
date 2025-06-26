@@ -1,8 +1,13 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
+import archiver from 'archiver';
+import { unparse } from 'papaparse';
 import { prisma } from '../index';
 import { processGeminiForImage } from './upload';
 import { isValidSampleCode } from '../services/gemini';
+import os from 'os';
+import { exiftool } from 'exiftool-vendored';
 
 const router = express.Router();
 
@@ -201,7 +206,9 @@ router.put('/:id', async (req, res) => {
       if (group && group.trim()) {
         // Group is being assigned/changed - ALWAYS override any existing status
         // This allows users to override extracted, auto_grouped, ungrouped, etc.
-        finalNewName = await generateSmartFilename(group, id, image.originalName);
+        // Import and use the generateSmartFilename that updates the database
+        const { generateSmartFilename: generateSmartFilenameWithUpdate } = await import('./upload');
+        await generateSmartFilenameWithUpdate(group, id, image.originalName);
         groupingStatus = 'complete';
         groupingConfidence = 1.0;
         
@@ -220,16 +227,23 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    // Prepare update data - exclude newName if we used generateSmartFilename
+    const updateData: any = {
+      ...(group !== undefined && { group }),
+      status,
+      groupingStatus,
+      groupingConfidence,
+      updatedAt: new Date(),
+    };
+
+    // Only include newName if we didn't call generateSmartFilename or if group was cleared
+    if (group === undefined || (group !== undefined && !group.trim())) {
+      updateData.newName = finalNewName;
+    }
+
     const updatedImage = await prisma.image.update({
       where: { id },
-      data: {
-        ...(finalNewName !== undefined && { newName: finalNewName }),
-        ...(group !== undefined && { group }),
-        status,
-        groupingStatus,
-        groupingConfidence,
-        updatedAt: new Date(),
-      },
+      data: updateData,
     });
 
     return res.json(transformImageForResponse(updatedImage));
@@ -351,10 +365,27 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Image not found' });
     }
 
+    // Delete from database first
     await prisma.image.delete({
       where: { id },
     });
 
+    // Try to delete physical files (don't fail if files don't exist)
+    try {
+      if (image.filePath && fs.existsSync(image.filePath)) {
+        await fs.promises.unlink(image.filePath);
+        console.log(`🗑️ Deleted original file: ${image.filePath}`);
+      }
+      
+      if (image.thumbnailPath && fs.existsSync(image.thumbnailPath)) {
+        await fs.promises.unlink(image.thumbnailPath);
+        console.log(`🗑️ Deleted thumbnail: ${image.thumbnailPath}`);
+      }
+    } catch (fileError) {
+      console.warn('Failed to delete physical files (non-critical):', fileError);
+    }
+
+    console.log(`✅ Successfully deleted image: ${image.originalName}`);
     return res.json({ message: 'Image deleted successfully' });
 
   } catch (error) {
@@ -424,6 +455,230 @@ router.post('/run-group-inference', async (req, res) => {
   } catch (error) {
     console.error('Error running group inference:', error);
     return res.status(500).json({ error: 'Failed to run group inference' });
+  }
+});
+
+// POST /api/images/export - Export images as zip with metadata and CSV
+router.post('/export', async (req, res) => {
+  // Prepare an array to track temp files for cleanup
+  const tempFiles: string[] = [];
+  
+  // Cleanup function to be called in all scenarios
+  const cleanupTempFiles = async () => {
+    try {
+      console.log('🧹 Cleaning up temporary files...');
+      for (const tmp of tempFiles) {
+        await fs.promises.unlink(tmp).catch(() => {});
+      }
+      await exiftool.end().catch(() => {});
+      console.log(`🧹 Cleaned up ${tempFiles.length} temp files and terminated exiftool`);
+    } catch (cleanupErr) {
+      console.error('Cleanup error:', cleanupErr);
+    }
+  };
+
+  // Set up timeout-based cleanup as failsafe (10 minutes)
+  const cleanupTimeout = setTimeout(async () => {
+    console.warn('⚠️  Export timeout reached, forcing cleanup...');
+    await cleanupTempFiles();
+  }, 10 * 60 * 1000); // 10 minutes
+
+  try {
+    console.log('🎯 Starting export process...');
+    
+    // Get all images from database
+    const allImages = await prisma.image.findMany({
+      orderBy: { timestamp: 'asc' }
+    });
+
+    if (allImages.length === 0) {
+      clearTimeout(cleanupTimeout);
+      return res.status(400).json({ 
+        error: 'No images to export',
+        details: 'Please upload and process some images first.'
+      });
+    }
+
+    // STEP 1: Validation
+    console.log(`📋 Validating ${allImages.length} images...`);
+    const validationErrors: string[] = [];
+    const newNameCounts = new Map<string, number>();
+    
+    for (const image of allImages) {
+      // Check for missing new names
+      if (!image.newName) {
+        validationErrors.push(`Image "${image.originalName}" is missing a new name`);
+        continue;
+      }
+
+      // Check for invalid characters in new names
+      const invalidChars = /[<>:"/\\|?*\x00-\x1f]/;
+      if (invalidChars.test(image.newName)) {
+        validationErrors.push(`Image "${image.originalName}" has invalid characters in new name "${image.newName}"`);
+      }
+
+      // Track duplicates
+      const currentCount = newNameCounts.get(image.newName) || 0;
+      newNameCounts.set(image.newName, currentCount + 1);
+    }
+
+    // Check for duplicate new names
+    for (const [newName, count] of newNameCounts.entries()) {
+      if (count > 1) {
+        validationErrors.push(`Duplicate new name "${newName}" found ${count} times`);
+      }
+    }
+
+    if (validationErrors.length > 0) {
+      console.log('❌ Validation failed:', validationErrors);
+      clearTimeout(cleanupTimeout);
+      await cleanupTempFiles();
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: 'Please fix the following issues before exporting:',
+        validationErrors
+      });
+    }
+
+    console.log('✅ Validation passed');
+
+    // STEP 2: Create zip file with images and metadata    
+    // Create archive
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Sets the compression level
+    });
+    
+    // Set response headers for file download
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const zipFileName = `exported-images-${timestamp}.zip`;
+    
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFileName}"`);
+    
+    // Pipe archive data to response
+    archive.pipe(res);
+
+    console.log('📦 Creating zip archive...');
+
+    // STEP 3: Add images to zip with embedded EXIF metadata
+    let processedCount = 0;
+    for (const image of allImages) {
+      try {
+        const originalPath = path.resolve(image.filePath);
+        
+        // Check if original file exists
+        if (!fs.existsSync(originalPath)) {
+          console.warn(`⚠️  File not found: ${originalPath}`);
+          continue;
+        }
+
+        // Build metadata JSON string
+        const metadata = {
+          originalName: image.originalName,
+          group: image.group,
+          code: image.code,
+          otherText: image.otherText,
+          objectDesc: image.objectDesc,
+          objectColors: image.objectColors ? JSON.parse(image.objectColors) : null,
+          timestamp: image.timestamp,
+          fileSize: image.fileSize,
+          geminiConfidence: image.geminiConfidence,
+          groupingConfidence: image.groupingConfidence,
+          status: image.status
+        };
+        const metadataJson = JSON.stringify(metadata);
+
+        // Create a temporary copy of the file to keep originals untouched
+        const tempFilePath = path.join(os.tmpdir(), `export-${Date.now()}-${image.id}-${image.newName}`);
+        await fs.promises.copyFile(originalPath, tempFilePath);
+        tempFiles.push(tempFilePath);
+
+        // Embed metadata via EXIF UserComment
+        await exiftool.write(tempFilePath, { UserComment: metadataJson }, ["-overwrite_original"]);
+
+        // Add the modified file to the archive
+        archive.file(tempFilePath, { name: `images/${image.newName}` });
+        
+        // Also add a sidecar JSON metadata file (optional but useful)
+        const metadataFileName = `metadata/${image.newName!.replace(/\.[^/.]+$/, '.json')}`;
+        archive.append(metadataJson, { name: metadataFileName });
+        
+        processedCount++;
+      } catch (error) {
+        console.error(`❌ Error processing image ${image.originalName}:`, error);
+      }
+    }
+
+    // STEP 4: Generate CSV with all metadata
+    console.log('📊 Generating CSV metadata...');
+    const csvData = allImages.map(image => ({
+      'Original Name': image.originalName,
+      'New Name': image.newName || '',
+      'Group': image.group || '',
+      'Code': image.code || '',
+      'Other Text': image.otherText || '',
+      'Object Description': image.objectDesc || '',
+      'File Size (bytes)': image.fileSize,
+      'Timestamp': image.timestamp,
+      'Status': image.status,
+      'Gemini Confidence': image.geminiConfidence || '',
+      'Grouping Confidence': image.groupingConfidence || '',
+      'Colors': image.objectColors ? JSON.parse(image.objectColors).map((c: any) => `${c.name}:${c.color}`).join('; ') : '',
+      'Created At': image.createdAt,
+      'Updated At': image.updatedAt
+    }));
+
+    const csvContent = unparse(csvData);
+    
+    // Add CSV to zip
+    archive.append(csvContent, { name: 'metadata.csv' });
+
+    // Add export summary
+    const summary = {
+      exportedAt: new Date().toISOString(),
+      totalImages: allImages.length,
+      processedImages: processedCount,
+      zipFileName,
+      exportedBy: 'OCR Auto Label v1.0.0'
+    };
+    
+    archive.append(JSON.stringify(summary, null, 2), { name: 'export-summary.json' });
+
+    console.log(`📤 Export completed: ${processedCount}/${allImages.length} images processed`);
+
+    // Finalize the archive
+    await archive.finalize();
+
+    // Setup cleanup for multiple scenarios
+    res.on('finish', async () => {
+      clearTimeout(cleanupTimeout);
+      await cleanupTempFiles();
+    });
+
+    res.on('error', async () => {
+      clearTimeout(cleanupTimeout);
+      await cleanupTempFiles();
+    });
+
+    res.on('close', async () => {
+      clearTimeout(cleanupTimeout);
+      await cleanupTempFiles();
+    });
+
+  } catch (error) {
+    console.error('❌ Export failed:', error);
+    
+    // Clear timeout and cleanup on error
+    clearTimeout(cleanupTimeout);
+    await cleanupTempFiles();
+    
+    // If headers haven't been sent yet, send error response
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: 'Export failed', 
+        details: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    }
   }
 });
 

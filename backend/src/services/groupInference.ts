@@ -380,15 +380,15 @@ export async function runGroupInference(): Promise<void> {
       // Inherit the group from the best match
       const inheritedGroup = bestMatch.group;
       
-      // Generate a smart filename for this inherited group
-      const newName = await generateSmartFilename(inheritedGroup, unlabeledImage.id, unlabeledImage.originalName);
+      // Generate a smart filename for this inherited group (now updates DB directly)
+      const { generateSmartFilename } = await import('../routes/upload');
+      await generateSmartFilename(inheritedGroup, unlabeledImage.id, unlabeledImage.originalName);
       
-      // Update the database
+      // Update other fields (excluding newName since generateSmartFilename handled it)
       await prisma.image.update({
         where: { id: unlabeledImage.id },
         data: {
           group: inheritedGroup,
-          newName: newName,
           groupingStatus: 'complete',
           groupingConfidence: 0.7, // Lower confidence since it's inferred
           updatedAt: new Date()
@@ -396,7 +396,10 @@ export async function runGroupInference(): Promise<void> {
       });
       
       inferencesCount++;
-      console.log(`🔗 Inferred group "${inheritedGroup}" for ${unlabeledImage.originalName} (matched with ${bestMatch.originalName})`);
+      
+      // Get updated image with new name for logging
+      const updatedImage = await prisma.image.findUnique({ where: { id: unlabeledImage.id } });
+      console.log(`🔗 Inferred group "${inheritedGroup}" for ${unlabeledImage.originalName} as ${updatedImage?.newName} (matched with ${bestMatch.originalName})`);
     }
     
     console.log(`✅ Group inference completed: ${inferencesCount} images grouped`);
@@ -404,83 +407,4 @@ export async function runGroupInference(): Promise<void> {
   } catch (error) {
     console.error('❌ Error in group inference:', error);
   }
-}
-
-/**
- * Generate smart filename - same logic as in upload.ts but extracted for reuse
- */
-async function generateSmartFilename(group: string, currentImageId: string, originalName: string): Promise<string> {
-  const path = await import('path');
-  const fileExtension = path.extname(originalName);
-  
-  // Sanitize the group name for filesystem safety
-  const sanitizedGroup = sanitizeFileName(group);
-  
-  // Get all images in this group (excluding current image)
-  const existingImages = await prisma.image.findMany({
-    where: { 
-      group: group, // Keep original group for database query
-      id: { not: currentImageId }
-    },
-    orderBy: { createdAt: 'asc' }
-  });
-  
-  // Check if there's already an image with extracted code in this group
-  const hasImageWithCode = existingImages.some(img => !!img.code);
-  
-  let baseName: string;
-  
-  if (existingImages.length === 0) {
-    // First image in group - use SANITIZED_GROUP.ext
-    baseName = `${sanitizedGroup}${fileExtension}`;
-  } else if (hasImageWithCode) {
-    // Group already has an image with extracted code - use SANITIZED_GROUP_X.ext
-    baseName = `${sanitizedGroup}_${existingImages.length + 1}${fileExtension}`;
-  } else {
-    // Current image would be first with extracted code - use SANITIZED_GROUP.ext
-    baseName = `${sanitizedGroup}${fileExtension}`;
-  }
-  
-  // Ensure global uniqueness - check if this name already exists across ALL images
-  let finalName = baseName;
-  let counter = 1;
-  
-  while (true) {
-    const existingImageWithName = await prisma.image.findFirst({
-      where: {
-        newName: finalName,
-        id: { not: currentImageId }
-      }
-    });
-    
-    if (!existingImageWithName) {
-      // Name is unique, we can use it
-      break;
-    }
-    
-    // Name exists, increment counter and try again
-    counter++;
-    const nameWithoutExt = baseName.replace(fileExtension, '');
-    
-    // If baseName already has a suffix (e.g., "test_2"), replace it with the new counter
-    if (nameWithoutExt.includes('_')) {
-      const baseWithoutSuffix = nameWithoutExt.substring(0, nameWithoutExt.lastIndexOf('_'));
-      finalName = `${baseWithoutSuffix}_${counter}${fileExtension}`;
-    } else {
-      finalName = `${nameWithoutExt}_${counter}${fileExtension}`;
-    }
-  }
-  
-  return finalName;
-}
-
-/**
- * Sanitize filename - same logic as in upload.ts
- */
-function sanitizeFileName(name: string): string {
-  return name
-    .replace(/[<>:"/\\|?*]/g, '_') // Replace invalid chars with underscore
-    .replace(/\s+/g, '_') // Replace spaces with underscore
-    .replace(/_+/g, '_') // Collapse multiple underscores
-    .replace(/^_|_$/g, ''); // Remove leading/trailing underscores
 } 

@@ -44,8 +44,8 @@ export function UploadArea() {
     setIsUploading(true);
     setTotalFiles(files.length);
     setUploadStart(Date.now());
-    // assume 20 files/sec => duration estimate
-    const est = Math.ceil(files.length / 20);
+    // assume 200 files/sec => duration estimate (much faster for local disk uploads)
+    const est = Math.ceil(files.length / 200);
     setEstimatedSeconds(est);
     try {
       console.log(`📤 Uploading ${files.length} files...`);
@@ -73,8 +73,8 @@ export function UploadArea() {
     setTotalFiles(1);
     setUploadStart(Date.now());
     
-    // Estimate extraction time based on file size (roughly 1MB per second)
-    const est = Math.max(5, Math.ceil(zipFile.size / (1024 * 1024)));
+    // Estimate extraction time based on file size (roughly 50MB per second for modern SSDs)
+    const est = Math.max(2, Math.ceil(zipFile.size / (50 * 1024 * 1024)));
     setEstimatedSeconds(est);
 
     try {

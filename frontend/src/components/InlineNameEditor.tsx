@@ -185,6 +185,7 @@ export function InlineNameEditor({
         ref={contentRef}
         className={cn(
           'min-h-[1.5rem] rounded hover:bg-accent/30 focus:bg-accent/30 focus:ring-2 transition-colors outline-none',
+          'flex items-center', // Add flex and items-center for vertical centering
           !base && 'text-muted-foreground italic',
           variantClasses,
           'border-none bg-transparent w-full',

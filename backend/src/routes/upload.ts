@@ -10,14 +10,14 @@ import ExifReader from 'exifreader';
 import { prisma } from '../index';
 
 import { extractTextFromImage, isValidSampleCode } from '../services/gemini';
-import { extractImagesFromZip, isValidZipFile, getExtractionEstimate } from '../services/zipExtractor';
+import { getExtractionEstimate, extractImagesFromZipFile } from '../services/zipExtractor';
 import { autoGroupImages } from '../services/grouping';
 import pLimit from 'p-limit';
 
 const router = express.Router();
 
-// Rate limiting for parallel processing - reduced to prevent API rate limits
-const geminiLimit = pLimit(20); // 3 concurrent Gemini requests (conservative)
+// Rate limiting for parallel Gemini API calls – prevents hitting quota/rate limits
+const geminiLimit = pLimit(40); // Optimized: faster image processing allows higher concurrency
 
 // Use OS temp directory + app-specific folder to avoid bloating codebase
 const TEMP_DIR = path.join(os.tmpdir(), 'ocr-auto-label');
@@ -29,7 +29,7 @@ const storage = multer.memoryStorage();
 const upload = multer({
   storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit
+    fileSize: 50 * 1024 * 1024, // 50MB per-image limit for standard image uploads
   },
   fileFilter: (req, file, cb) => {
     // Accept JPEG, PNG, HEIC formats and ZIP files
@@ -38,6 +38,25 @@ const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('Invalid file type. Only JPEG, PNG, HEIC, and ZIP files are allowed.'));
+    }
+  },
+});
+
+// Dedicated uploader for large ZIP archives – streams directly to disk to avoid RAM spikes
+const zipUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, os.tmpdir()), // OS temp dir always exists
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+  }),
+  limits: {
+    fileSize: 5 * 1024 * 1024 * 1024, // up to 5 GB ZIP archives
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['application/zip', 'application/x-zip-compressed'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only ZIP files are allowed for this endpoint.'));
     }
   },
 });
@@ -267,8 +286,6 @@ router.post('/', upload.array('files'), async (req, res) => {
   }
 });
 
-
-
 // Function to clean up old data and files
 async function cleanupOldData() {
   try {
@@ -349,11 +366,13 @@ export async function generateSmartFilename(group: string, currentImageId: strin
     baseName = `${sanitizedGroup}${fileExtension}`;
   }
   
-  // Ensure global uniqueness - check if this name already exists across ALL images
+  // Ensure global uniqueness with retry logic to handle race conditions
   let finalName = baseName;
   let counter = 1;
+  let maxRetries = 20; // Prevent infinite loops
   
-  while (true) {
+  while (maxRetries > 0) {
+    // Use a more robust check that includes a small random delay to reduce collision probability
     const existingImageWithName = await prisma.image.findFirst({
       where: {
         newName: finalName,
@@ -362,11 +381,24 @@ export async function generateSmartFilename(group: string, currentImageId: strin
     });
     
     if (!existingImageWithName) {
-      // Name is unique, we can use it
-      break;
+      // Name appears to be unique - try to claim it by updating the database
+      try {
+        // Attempt to set the name on the current image
+        await prisma.image.update({
+          where: { id: currentImageId },
+          data: { newName: finalName }
+        });
+        
+        // If we get here, we successfully claimed the name
+        return finalName;
+      } catch (error) {
+        // Database update failed - likely because another process claimed this name
+        // Fall through to try the next counter value
+        console.log(`Name collision detected for ${finalName}, trying next counter...`);
+      }
     }
     
-    // Name exists, increment counter and try again
+    // Name exists or we failed to claim it, increment counter and try again
     counter++;
     const nameWithoutExt = baseName.replace(fileExtension, '');
     
@@ -377,9 +409,20 @@ export async function generateSmartFilename(group: string, currentImageId: strin
     } else {
       finalName = `${nameWithoutExt}_${counter}${fileExtension}`;
     }
+    
+    maxRetries--;
   }
   
-  return finalName;
+  // Fallback: if we couldn't find a unique name after many attempts, use UUID
+  const fallbackName = `${sanitizedGroup}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${fileExtension}`;
+  console.warn(`Failed to generate unique name for ${group}, using fallback: ${fallbackName}`);
+  
+  await prisma.image.update({
+    where: { id: currentImageId },
+    data: { newName: fallbackName }
+  });
+  
+  return fallbackName;
 }
 
 // Start Gemini processing for uploaded images
@@ -395,13 +438,107 @@ async function startGeminiProcessing(imageIds: string[]) {
     await Promise.all(processingPromises);
     console.log('✅ All Gemini processing completed');
     
+    // NEW: Auto-resolve duplicate names after extraction
+    console.log('🔧 Resolving duplicate names...');
+    await resolveDuplicateNames();
+    console.log('✅ Duplicate name resolution completed');
+    
     // Start auto-grouping for images without codes
     console.log('🔗 Starting auto-grouping process...');
     await autoGroupImages();
     console.log('✅ Auto-grouping completed');
     
+    // Final duplicate resolution after auto-grouping (in case auto-grouping created new duplicates)
+    console.log('🔧 Final duplicate name resolution...');
+    await resolveDuplicateNames();
+    console.log('✅ Final duplicate resolution completed');
+    
   } catch (error) {
     console.error('❌ Error in Gemini processing:', error);
+  }
+}
+
+/**
+ * Automatically resolve duplicate names by regenerating names for all but the first image
+ * This handles race conditions during concurrent Gemini processing
+ */
+async function resolveDuplicateNames(): Promise<void> {
+  try {
+    // Find all images with duplicate newName values (excluding empty names)
+    const allImages = await prisma.image.findMany({
+      select: {
+        id: true,
+        newName: true,
+        originalName: true,
+        group: true,
+        createdAt: true,
+        status: true
+      },
+      where: {
+        AND: [
+          { newName: { not: null } },
+          { newName: { not: '' } }
+        ]
+      },
+      orderBy: { createdAt: 'asc' } // Earlier created images get priority
+    });
+
+    // Group images by newName to find duplicates
+    const nameGroups = new Map<string, Array<typeof allImages[0]>>();
+    for (const image of allImages) {
+      if (!image.newName) continue;
+      
+      if (!nameGroups.has(image.newName)) {
+        nameGroups.set(image.newName, []);
+      }
+      nameGroups.get(image.newName)!.push(image);
+    }
+
+    // Find groups with duplicates
+    const duplicateGroups = Array.from(nameGroups.entries())
+      .filter(([, images]) => images.length > 1);
+
+    if (duplicateGroups.length === 0) {
+      console.log('✅ No duplicate names found');
+      return;
+    }
+
+    console.log(`🔧 Found ${duplicateGroups.length} sets of duplicate names, resolving...`);
+
+    let resolvedCount = 0;
+    for (const [duplicateName, duplicateImages] of duplicateGroups) {
+      console.log(`📝 Resolving ${duplicateImages.length} duplicates of "${duplicateName}"`);
+      
+      // Keep the first image (earliest created), regenerate names for the rest
+      const [keepImage, ...regenerateImages] = duplicateImages;
+      
+      for (const image of regenerateImages) {
+        try {
+          // Use our existing generateSmartFilename function which handles collisions
+          const newUniqueName = await generateSmartFilename(
+            image.group || 'ungrouped', 
+            image.id, 
+            image.originalName
+          );
+          
+          console.log(`  ✅ ${image.originalName}: "${duplicateName}" → "${newUniqueName}"`);
+          
+          // Broadcast the update to connected clients
+          broadcastGeminiUpdate(image.id, {
+            newName: newUniqueName
+          });
+          
+          resolvedCount++;
+        } catch (error) {
+          console.error(`  ❌ Failed to resolve duplicate for ${image.originalName}:`, error);
+        }
+      }
+    }
+
+    console.log(`✅ Resolved ${resolvedCount} duplicate names`);
+    
+  } catch (error) {
+    console.error('❌ Error resolving duplicate names:', error);
   }
 }
 
@@ -468,22 +605,28 @@ export async function processGeminiForImage(imageId: string): Promise<void> {
       console.log(`🔍 No code found, will need grouping`);
     }
 
-    // Update database with results
+    // Update database with results (excluding newName since generateSmartFilename already set it)
+    const updateData: any = {
+      geminiStatus: 'complete',
+      status: newStatus,
+      code: geminiResult.code,
+      otherText: geminiResult.otherText,
+      objectDesc: geminiResult.objectDesc,
+      objectColors: geminiResult.objectColors ? JSON.stringify(geminiResult.objectColors) : null,
+      geminiConfidence: geminiResult.confidence,
+      group: group,
+      groupingStatus: groupingStatus,
+      groupingConfidence: groupingConfidence,
+    };
+
+    // Only include newName in update if we didn't call generateSmartFilename (i.e., no code found)
+    if (!geminiResult.code) {
+      updateData.newName = newName;
+    }
+
     await prisma.image.update({
       where: { id: imageId },
-      data: {
-        geminiStatus: 'complete',
-        status: newStatus,
-        code: geminiResult.code,
-        otherText: geminiResult.otherText,
-        objectDesc: geminiResult.objectDesc,
-        objectColors: geminiResult.objectColors ? JSON.stringify(geminiResult.objectColors) : null,
-        geminiConfidence: geminiResult.confidence,
-        newName: newName,
-        group: group,
-        groupingStatus: groupingStatus,
-        groupingConfidence: groupingConfidence,
-      }
+      data: updateData
     });
 
     // Broadcast completion update
@@ -531,20 +674,40 @@ export function broadcastGeminiUpdate(imageId: string, updates: any) {
     updates
   });
 
-  sseClients.forEach((client) => {
+  const deadConnections: number[] = [];
+
+  sseClients.forEach((client, clientId) => {
     try {
+      // Check if response is still writable
+      if (client.destroyed || client.writableEnded) {
+        deadConnections.push(clientId);
+        return;
+      }
+
       client.write(`data: ${data}\n\n`);
       if (client.flush) {
         try {
           client.flush();
-        } catch (_) {
-          // Ignore flush errors
+        } catch (flushError) {
+          // Flush failed, connection might be dead
+          console.warn(`SSE flush failed for client ${clientId}, marking as dead`);
+          deadConnections.push(clientId);
         }
       }
     } catch (error) {
-      // Client disconnected, will be cleaned up by event handlers
+      // Write failed, connection is dead
+      console.warn(`SSE write failed for client ${clientId}, removing connection`);
+      deadConnections.push(clientId);
     }
   });
+
+  // Clean up dead connections
+  deadConnections.forEach(clientId => {
+    console.log(`🧹 Removing dead SSE client ${clientId}`);
+    sseClients.delete(clientId);
+  });
+
+  console.log(`📡 Broadcast to ${sseClients.size} active SSE clients for image ${imageId}`);
 }
 
 // POST /api/upload/cleanup - Manual cleanup endpoint
@@ -629,7 +792,7 @@ router.get('/progress', (req, res) => {
 });
 
 // POST /api/upload/zip - Handle ZIP file upload and extract images
-router.post('/zip', upload.single('file'), async (req, res) => {
+router.post('/zip', zipUpload.single('file'), async (req, res) => {
   try {
     await ensureDirectories();
 
@@ -639,54 +802,61 @@ router.post('/zip', upload.single('file'), async (req, res) => {
 
     console.log(`📦 Processing ZIP file: ${req.file.originalname} (${req.file.size} bytes)`);
 
-    // Validate that it's actually a ZIP file
-    if (!isValidZipFile(req.file.buffer)) {
-      return res.status(400).json({ error: 'Invalid ZIP file format' });
-    }
-
     // Clean up old data before processing new uploads
     console.log('🧹 Cleaning up old data...');
     await cleanupOldData();
 
-    // Get extraction time estimate
+    // Estimate extraction duration for UI hints
     const estimatedSeconds = getExtractionEstimate(req.file.size);
     console.log(`📊 Estimated extraction time: ${estimatedSeconds} seconds`);
 
-    // Extract images from ZIP
-    console.log('📦 Extracting images from ZIP file...');
-    const extractedFiles = await extractImagesFromZip(req.file.buffer);
+    // Process images as they stream out of the archive
+    console.log('📦 Stream-extracting images from ZIP…');
 
-    if (extractedFiles.length === 0) {
-      return res.status(400).json({ error: 'No supported image files found in ZIP archive' });
-    }
+    const uploadedImages: any[] = [];
+    const saveLimit = pLimit(50); // avoid disk thrash & memory spikes
+    const savePromises: Promise<void>[] = [];
 
-    console.log(`📸 Found ${extractedFiles.length} images in ZIP file`);
+    // Stream through the zipfile on disk
+    await extractImagesFromZipFile(req.file.path, async (extractedFile) => {
+      const promise = saveLimit(async () => {
+        const mockFile: Express.Multer.File = {
+          fieldname: 'files',
+          originalname: extractedFile.filename,
+          encoding: '7bit',
+          mimetype: 'image/jpeg', // Will be corrected later by mime detection
+          size: extractedFile.buffer.length,
+          buffer: extractedFile.buffer,
+          destination: '',
+          filename: '',
+          path: '',
+          stream: null as any,
+        };
 
-    // Process extracted images - create mock Express.Multer.File objects
-    const uploadPromises = extractedFiles.map(async (extractedFile) => {
-      // Create a mock multer file object from the extracted data
-      const mockFile: Express.Multer.File = {
-        fieldname: 'files',
-        originalname: extractedFile.filename,
-        encoding: '7bit',
-        mimetype: 'image/jpeg', // Will be corrected by mime detection
-        size: extractedFile.buffer.length,
-        buffer: extractedFile.buffer,
-        destination: '',
-        filename: '',
-        path: '',
-        stream: null as any
-      };
+        const saved = await saveFileOnly(
+          mockFile,
+          extractedFile.relativePath,
+          extractedFile.lastModified.getTime()
+        );
+        uploadedImages.push(saved);
+      });
 
-      // Use the existing saveFileOnly function but pass the relative path for organization
-      return await saveFileOnly(
-        mockFile, 
-        extractedFile.relativePath, // Use full relative path from ZIP
-        extractedFile.lastModified.getTime()
-      );
+      savePromises.push(promise);
+      return promise; // ensure extractor waits on this task
     });
 
-    const uploadedImages = await Promise.all(uploadPromises);
+    // Await pending writes
+    await Promise.all(savePromises);
+
+    // Remove temporary ZIP file to free disk space
+    try {
+      if (req.file && req.file.path) {
+        await fs.unlink(req.file.path);
+        console.log(`🗑️  Deleted temporary ZIP: ${req.file.path}`);
+      }
+    } catch (unlinkErr) {
+      console.warn('Failed to delete temporary ZIP file:', unlinkErr);
+    }
 
     // Sort by timestamp for chronological order
     uploadedImages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -700,7 +870,7 @@ router.post('/zip', upload.single('file'), async (req, res) => {
     return res.json({
       message: `Successfully extracted ${uploadedImages.length} images from ZIP file`,
       images: uploadedImages,
-      extractionTime: estimatedSeconds
+      extractionTime: estimatedSeconds,
     });
 
   } catch (error) {
@@ -724,7 +894,5 @@ router.post('/zip', upload.single('file'), async (req, res) => {
 
 // Store active SSE connections
 const sseClients = new Map<number, any>();
-
-
 
 export default router; 

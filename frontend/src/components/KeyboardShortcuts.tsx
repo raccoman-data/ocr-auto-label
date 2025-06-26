@@ -13,6 +13,7 @@ interface KeyboardShortcut {
 const shortcuts: KeyboardShortcut[] = [
   // Navigation
   { keys: ['↑', '↓'], description: 'Navigate up/down in table', category: 'navigation' },
+  { keys: [isMac ? 'Cmd' : 'Ctrl', 'F'], description: 'Focus search', category: 'navigation' },
   
   // Selection
   { keys: ['Shift', '↑/↓'], description: 'Multi-select images', category: 'selection' },

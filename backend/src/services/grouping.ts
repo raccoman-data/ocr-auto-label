@@ -62,13 +62,13 @@ export async function autoGroupImages(): Promise<GroupingResult[]> {
 
     // Apply the grouping result
     if (groupingResult.suggestedGroup) {
-      // Generate smart filename for the auto-grouped image
+      // Generate smart filename for the auto-grouped image (this now updates newName in DB)
       const { generateSmartFilename } = await import('../routes/upload');
-      const newName = await generateSmartFilename(groupingResult.suggestedGroup, image.id, image.originalName);
+      await generateSmartFilename(groupingResult.suggestedGroup, image.id, image.originalName);
       
+      // Update other fields (excluding newName since generateSmartFilename handled it)
       const updatedData = {
         group: groupingResult.suggestedGroup,
-        newName: newName,
         status: 'auto_grouped',
         groupingStatus: 'complete',
         groupingConfidence: groupingResult.confidence
@@ -79,11 +79,15 @@ export async function autoGroupImages(): Promise<GroupingResult[]> {
         data: updatedData
       });
 
-      // Broadcast the update
+      // Broadcast the update (include newName from fresh query)
       const broadcast = await getBroadcastFunction();
-      broadcast(image.id, updatedData);
+      const updatedImage = await prisma.image.findUnique({ where: { id: image.id } });
+      broadcast(image.id, {
+        ...updatedData,
+        newName: updatedImage?.newName
+      });
 
-      console.log(`✅ Auto-grouped ${image.originalName} → ${groupingResult.suggestedGroup} as ${newName} (${groupingResult.reason})`);
+      console.log(`✅ Auto-grouped ${image.originalName} → ${groupingResult.suggestedGroup} as ${updatedImage?.newName} (${groupingResult.reason})`);
     } else {
       // Preserve original status for invalid_group, otherwise mark as ungrouped
       const fallbackStatus = originalStatus === 'invalid_group' ? 'invalid_group' : 'ungrouped';

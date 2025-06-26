@@ -283,14 +283,25 @@ export function Sidebar() {
                   }
                 }
               }}
-              title={selectedImage.code ? "Click to copy code" : undefined}
+              title={selectedImage.code ? 
+                `Code: ${selectedImage.code}\nConfidence: ${selectedImage.geminiConfidence ? (selectedImage.geminiConfidence * 100).toFixed(1) + '%' : 'Unknown'}\nClick to copy` : 
+                undefined
+              }
             >
               <div className="flex items-center justify-between">
-                <span>
-                  {selectedImage.code || (
-                    <span className="italic text-muted-foreground">Not detected</span>
+                <div className="flex items-center gap-2">
+                  <span>
+                    {selectedImage.code || (
+                      <span className="italic text-muted-foreground">Not detected</span>
+                    )}
+                  </span>
+                  {/* Confidence indicator */}
+                  {selectedImage.code && selectedImage.geminiConfidence && (
+                    <span className="text-xs text-muted-foreground/60 font-normal">
+                      ({(selectedImage.geminiConfidence * 100).toFixed(1)}%)
+                    </span>
                   )}
-                </span>
+                </div>
                 {selectedImage.code && (
                   <div className="ml-2 flex items-center">
                     {copyFeedback ? (
@@ -305,8 +316,6 @@ export function Sidebar() {
                 )}
               </div>
             </div>
-            
-
           </div>
 
           <div>

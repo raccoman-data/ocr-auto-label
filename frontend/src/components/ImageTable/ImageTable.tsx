@@ -12,8 +12,8 @@ function isValidSampleCode(code: string | null): boolean {
   
   const trimmedCode = code.trim().toUpperCase();
   
-  // Pattern 1: MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12]
-  const mwi1Pattern = /^MWI\.1\.([1-3])\.([1-9]|1[0-9]|2[0-4])\.([1-9]|10)[A-D]\.([1-9]|1[0-9]|2[0-5])\.([1-9]|1[0-2])$/;
+  // Pattern 1: MWI.1.[1-3].[1-24].[1-10][A-D].[1-30].[1-12]
+  const mwi1Pattern = /^MWI\.1\.([1-3])\.([1-9]|1[0-9]|2[0-4])\.([1-9]|10)[A-D]\.([1-9]|1[0-9]|2[0-9]|30)\.([1-9]|1[0-2])$/;
   
   // Pattern 2: MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
   const mwi0Pattern = /^MWI\.0\.([1-3])\.([1-6])\.([1-9]|1[0-3])\.([1-9]|1[0-9]|2[0-7])\.([1-9]|1[0-2])$/;
@@ -144,6 +144,16 @@ export function ImageTable({
         // Other keys: let the input handle them normally
         return;
       }
+    }
+
+    /* ----- Focus Search (⌘/Ctrl + F) ----------------------- */
+    if (isMeta && e.key.toLowerCase() === 'f') {
+      e.preventDefault(); // Prevent browser search
+      const searchInput = document.getElementById('search-input');
+      if (searchInput) {
+        searchInput.focus();
+      }
+      return;
     }
 
     /* ----- Open Group Editor (⌘/Ctrl + G) ------------------- */
@@ -290,6 +300,14 @@ export function ImageTable({
 
     /* ----- Clear selection (Escape) --------------------------- */
     if (e.key === 'Escape') {
+      // If search is focused and has content, clear it first
+      const searchInput = document.getElementById('search-input') as HTMLInputElement;
+      if (searchInput && document.activeElement === searchInput && searchInput.value) {
+        useImageStore.getState().setSearchQuery('');
+        return;
+      }
+      
+      // Otherwise clear selection
       useImageStore.setState({
         selection: {
           selectedIds: new Set(),
@@ -500,6 +518,32 @@ export function ImageTable({
                     ? activeEditorState.additionalIds 
                     : [];
 
+                // Calculate group visual indicators - check for consecutive grouping
+                const currentGroup = image.group && image.group.trim() ? image.group : null;
+                const prevImage = virtualItem.index > 0 ? images[virtualItem.index - 1] : null;
+                const nextImage = virtualItem.index < images.length - 1 ? images[virtualItem.index + 1] : null;
+                
+                const prevGroup = prevImage?.group && prevImage.group.trim() ? prevImage.group : null;
+                const nextGroup = nextImage?.group && nextImage.group.trim() ? nextImage.group : null;
+                
+                // Determine group position for visual styling
+                let groupPosition: 'single' | 'first' | 'middle' | 'last' | 'none' = 'none';
+                
+                if (currentGroup) {
+                  const hasGroupBefore = prevGroup === currentGroup;
+                  const hasGroupAfter = nextGroup === currentGroup;
+                  
+                  if (hasGroupBefore && hasGroupAfter) {
+                    groupPosition = 'middle';
+                  } else if (hasGroupBefore && !hasGroupAfter) {
+                    groupPosition = 'last';
+                  } else if (!hasGroupBefore && hasGroupAfter) {
+                    groupPosition = 'first';
+                  } else {
+                    groupPosition = 'single'; // Has group but not consecutive
+                  }
+                }
+
                 return (
                   <div
                     key={image.id}
@@ -519,6 +563,7 @@ export function ImageTable({
                       onClick={(e) => handleRowClick(e, image)}
                       onGroupEditorRef={handleGroupEditorRef}
                       additionalImageIds={additionalIds}
+                      groupPosition={groupPosition}
                     />
                   </div>
                 );
