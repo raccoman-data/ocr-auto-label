@@ -58,7 +58,7 @@ export function KeyboardShortcutsPanel({ variant = 'panel', className = '' }: Ke
   }
 
   return (
-    <div className={`bg-background/50 backdrop-blur-sm border border-border rounded-xl p-5 shadow-sm ${className}`}>
+    <div className={className}>
       <h3 className="text-sm font-semibold text-foreground mb-4">Keyboard Shortcuts</h3>
       
       <div className="space-y-2">
@@ -70,7 +70,7 @@ export function KeyboardShortcutsPanel({ variant = 'panel', className = '' }: Ke
             <div className="flex items-center gap-1 ml-2 flex-shrink-0">
               {shortcut.keys.map((key, keyIndex) => (
                 <React.Fragment key={keyIndex}>
-                  <kbd className="px-1.5 py-0.5 text-xs font-medium text-foreground bg-accent/20 border border-border rounded">
+                  <kbd className="px-1.5 py-0.5 text-xs font-medium text-foreground bg-white/70 border border-border rounded shadow-sm">
                     {key}
                   </kbd>
                   {keyIndex < shortcut.keys.length - 1 && (

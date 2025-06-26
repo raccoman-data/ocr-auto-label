@@ -172,12 +172,13 @@ export function UploadArea() {
       <div
         className={`
           relative border-2 border-dashed rounded-xl p-12 text-center cursor-pointer
-          transition-all duration-200 ease-in-out
+          transition-all duration-300 ease-in-out transform
           ${isDragOver 
-            ? 'border-primary bg-primary/5 scale-[1.02]' 
-            : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30'
+            ? 'border-primary bg-primary/5 scale-[1.02] shadow-xl shadow-primary/10' 
+            : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30 hover:scale-[1.01] hover:shadow-lg hover:shadow-slate-200/50'
           }
           ${isProcessing ? 'pointer-events-none' : ''}
+          bg-white/20 backdrop-blur-sm
         `}
         onDrop={handleDrop}
         onDragOver={(e) => {

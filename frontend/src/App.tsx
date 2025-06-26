@@ -62,10 +62,20 @@ function App() {
   }
 
   return (
-    <div className="h-screen bg-background text-foreground flex flex-col">
+    <div className="h-screen text-foreground flex flex-col">
       {/* Upload Area - shown when no images */}
       {images.length === 0 && (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 pt-16">
+        <div 
+          className="flex-1 flex flex-col items-center justify-center p-8 pt-16 relative"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+              linear-gradient(to bottom, #ffffff 0%, #f8fafc 30%, #f1f5f9 60%, #e2e8f0 100%)
+            `,
+            backgroundSize: '28px 28px, 28px 28px, 100% 100%'
+          }}
+        >
           {/* How It Works section - above upload area */}
           <div className="w-full max-w-4xl mb-12">
             <HowItWorks />

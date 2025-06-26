@@ -418,14 +418,33 @@ async function cleanupOldData() {
   }
 }
 
+// Sanitize filename to be filesystem-safe
+function sanitizeFileName(name: string): string {
+  return name
+    .trim()
+    // Replace spaces with underscores
+    .replace(/\s+/g, '_')
+    // Remove or replace problematic characters
+    .replace(/[<>:"/\\|?*]/g, '')
+    // Replace multiple consecutive underscores with single underscore
+    .replace(/_+/g, '_')
+    // Remove leading/trailing underscores
+    .replace(/^_+|_+$/g, '')
+    // Ensure we don't end up with an empty string
+    || 'untitled';
+}
+
 // Generate smart filename based on group and existing files
 async function generateSmartFilename(group: string, currentImageId: string, originalName: string): Promise<string> {
   const fileExtension = path.extname(originalName);
   
+  // Sanitize the group name for filesystem safety
+  const sanitizedGroup = sanitizeFileName(group);
+  
   // Get all images in this group (excluding current image)
   const existingImages = await prisma.image.findMany({
     where: { 
-      group: group,
+      group: group, // Keep original group for database query
       id: { not: currentImageId }
     },
     orderBy: { createdAt: 'asc' }
@@ -434,16 +453,50 @@ async function generateSmartFilename(group: string, currentImageId: string, orig
   // Check if there's already an image with extracted code in this group
   const hasImageWithCode = existingImages.some(img => !!img.code);
   
+  let baseName: string;
+  
   if (existingImages.length === 0) {
-    // First image in group - use GROUP.ext
-    return `${group}${fileExtension}`;
+    // First image in group - use SANITIZED_GROUP.ext
+    baseName = `${sanitizedGroup}${fileExtension}`;
   } else if (hasImageWithCode) {
-    // Group already has an image with extracted code - use GROUP_X.ext
-    return `${group}_${existingImages.length + 1}${fileExtension}`;
+    // Group already has an image with extracted code - use SANITIZED_GROUP_X.ext
+    baseName = `${sanitizedGroup}_${existingImages.length + 1}${fileExtension}`;
   } else {
-    // Current image would be first with extracted code - use GROUP.ext
-    return `${group}${fileExtension}`;
+    // Current image would be first with extracted code - use SANITIZED_GROUP.ext
+    baseName = `${sanitizedGroup}${fileExtension}`;
   }
+  
+  // Ensure global uniqueness - check if this name already exists across ALL images
+  let finalName = baseName;
+  let counter = 1;
+  
+  while (true) {
+    const existingImageWithName = await prisma.image.findFirst({
+      where: {
+        newName: finalName,
+        id: { not: currentImageId }
+      }
+    });
+    
+    if (!existingImageWithName) {
+      // Name is unique, we can use it
+      break;
+    }
+    
+    // Name exists, increment counter and try again
+    counter++;
+    const nameWithoutExt = baseName.replace(fileExtension, '');
+    
+    // If baseName already has a suffix (e.g., "test_2"), replace it with the new counter
+    if (nameWithoutExt.includes('_')) {
+      const baseWithoutSuffix = nameWithoutExt.substring(0, nameWithoutExt.lastIndexOf('_'));
+      finalName = `${baseWithoutSuffix}_${counter}${fileExtension}`;
+    } else {
+      finalName = `${nameWithoutExt}_${counter}${fileExtension}`;
+    }
+  }
+  
+  return finalName;
 }
 
 // Start parallel processing for palette extraction and Gemini OCR
