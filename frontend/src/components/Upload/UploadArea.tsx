@@ -45,7 +45,7 @@ export function UploadArea() {
     setTotalFiles(files.length);
     setUploadStart(Date.now());
     // assume 200 files/sec => duration estimate (much faster for local disk uploads)
-    const est = Math.ceil(files.length / 200);
+    const est = Math.ceil(files.length / 100);
     setEstimatedSeconds(est);
     try {
       console.log(`📤 Uploading ${files.length} files...`);
