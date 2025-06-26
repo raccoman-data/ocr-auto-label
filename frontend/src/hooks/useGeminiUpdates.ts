@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useImageStore } from '@/stores/imageStore';
 
-export function usePaletteUpdates() {
+export function useGeminiUpdates() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const { updateImage } = useImageStore();
 
@@ -18,26 +18,21 @@ export function usePaletteUpdates() {
       try {
         const data = JSON.parse(event.data);
         
-        if (data.type === 'palette_update') {
-          console.log(`🎨 Palette update for image ${data.imageId}:`, data.updates);
+        if (data.type === 'gemini_update') {
+          console.log(`🧠 Gemini update for image ${data.imageId}:`, data.updates);
           
-          // Parse palette if it exists
+          // Parse objectColors if it exists
           let updates = { ...data.updates };
-          if (updates.palette && typeof updates.palette === 'string') {
+          if (updates.objectColors && typeof updates.objectColors === 'string') {
             try {
-              updates.palette = JSON.parse(updates.palette);
+              updates.objectColors = JSON.parse(updates.objectColors);
             } catch (e) {
-              console.warn('Failed to parse palette data:', e);
+              console.warn('Failed to parse object colors data:', e);
             }
           }
           
           // Update the specific image in the store
           updateImage(data.imageId, updates);
-        } else if (data.type === 'gemini_update') {
-          console.log(`🧠 Gemini update for image ${data.imageId}:`, data.updates);
-          
-          // Update the specific image in the store
-          updateImage(data.imageId, data.updates);
         }
       } catch (error) {
         console.error('Failed to parse SSE message:', error);

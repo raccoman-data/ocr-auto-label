@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { StatusIcons } from '@/components/ImageTable/StatusIcons';
+import { StatusDisplay } from '@/components/ImageTable/StatusDisplay';
 import { cn } from '@/lib/utils';
 import { Image } from '@/types';
 import { useImageStore } from '@/stores/imageStore';
@@ -159,6 +159,7 @@ export function TableRow({
           currentName={image.newName || ''}
           placeholder={image.code || 'Unnamed'}
           originalName={image.originalName}
+          imageId={image.id}
           onSave={handleNameUpdate}
           variant="table"
           className="w-full"
@@ -182,7 +183,7 @@ export function TableRow({
       
       {/* Timestamp Column */}
       <div className="w-48 linear-cell -ml-2">
-        <div className="text-sm text-muted-foreground" title={
+        <div className="text-sm text-muted-foreground pl-1" title={
           typeof image.timestamp === 'string' 
             ? new Date(image.timestamp).toLocaleString()
             : image.timestamp.toLocaleString()
@@ -193,15 +194,8 @@ export function TableRow({
       
       {/* Status Column */}
       <div className="w-32 linear-cell flex justify-end pr-2">
-        <StatusIcons
-          paletteStatus={image.paletteStatus}
-          geminiStatus={image.geminiStatus}
-          groupingStatus={image.groupingStatus}
-          paletteConfidence={image.paletteConfidence}
-          geminiConfidence={image.geminiConfidence}
-          groupingConfidence={image.groupingConfidence}
-          hasCode={!!image.code}
-          code={image.code}
+        <StatusDisplay
+          status={image.status || 'pending'}
         />
       </div>
     </div>

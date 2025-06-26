@@ -6,14 +6,14 @@ import { Sidebar } from '@/components/Sidebar';
 import { KeyboardShortcutsPanel } from '@/components/KeyboardShortcuts';
 import { HowItWorks } from '@/components/HowItWorks';
 import { useImageStore } from '@/stores/imageStore';
-import { usePaletteUpdates } from '@/hooks/usePaletteUpdates';
+import { useGeminiUpdates } from '@/hooks/useGeminiUpdates';
 import { Image } from '@/types';
 
 function App() {
   const { images, selectedImage, selectImage, getFilteredImages, refreshImages, setLoading, isLoading } = useImageStore();
   
-  // Enable real-time palette updates
-  usePaletteUpdates();
+  // Enable real-time Gemini updates
+  useGeminiUpdates();
   
   // Load existing images on app startup
   useEffect(() => {

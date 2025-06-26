@@ -1,13 +1,13 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { Upload, Loader2 } from 'lucide-react';
 import { useImageStore } from '@/stores/imageStore';
-import { uploadFiles, uploadZipFile, processPalettes } from '@/lib/api';
+import { uploadFiles, uploadZipFile } from '@/lib/api';
 import { HowItWorks } from '@/components/HowItWorks';
 
 export function UploadArea() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isProcessingPalettes, setIsProcessingPalettes] = useState(false);
+
   const { refreshImages } = useImageStore();
   const [totalFiles, setTotalFiles] = useState(0);
   const [uploadStart, setUploadStart] = useState<number | null>(null);
@@ -57,29 +57,13 @@ export function UploadArea() {
       // Step 2: Refresh to show uploaded files
       await refreshImages();
       
-      // Step 3: Start palette processing (non-blocking)
+      // All processing is done in the background via Gemini
       setIsUploading(false);
-      setIsProcessingPalettes(true);
-      
-      console.log('🎨 Starting palette processing...');
-      
-      // Start palette processing but don't wait for it
-      // The SSE connection will handle real-time updates
-      processPalettes()
-        .then(() => {
-          console.log('✅ Palette processing complete');
-          setIsProcessingPalettes(false);
-        })
-        .catch((error) => {
-          console.error('Error during palette processing:', error);
-          setIsProcessingPalettes(false);
-        });
       
     } catch (error) {
       console.error('Error during upload/processing:', error);
       alert('Failed to upload or process files. Please try again.');
       setIsUploading(false);
-      setIsProcessingPalettes(false);
     }
   }, [refreshImages]);
 
@@ -103,24 +87,9 @@ export function UploadArea() {
       // Step 2: Refresh to show extracted files
       await refreshImages();
       
-      // Step 3: Start palette processing (non-blocking)
+      // All processing is done in the background via Gemini
       setIsUploading(false);
       setIsExtractingZip(false);
-      setIsProcessingPalettes(true);
-      
-      console.log('🎨 Starting palette processing...');
-      
-      // Start palette processing but don't wait for it
-      // The SSE connection will handle real-time updates
-      processPalettes()
-        .then(() => {
-          console.log('✅ Palette processing complete');
-          setIsProcessingPalettes(false);
-        })
-        .catch((error) => {
-          console.error('Error during palette processing:', error);
-          setIsProcessingPalettes(false);
-        });
       
     } catch (error) {
       console.error('Error during ZIP processing:', error);
@@ -131,7 +100,7 @@ export function UploadArea() {
       alert(errorMessage);
       setIsUploading(false);
       setIsExtractingZip(false);
-      setIsProcessingPalettes(false);
+
     }
   }, [refreshImages]);
 
@@ -150,7 +119,7 @@ export function UploadArea() {
     e.target.value = '';
   }, [handleFiles]);
 
-  const isProcessing = isUploading || isProcessingPalettes;
+  const isProcessing = isUploading;
 
   // Update countdown every second while uploading
   useEffect(() => {
@@ -232,17 +201,6 @@ export function UploadArea() {
                 </p>
                 <p className="text-sm text-primary">
                   Est. {estimatedSeconds}s remaining
-                </p>
-              </div>
-            </>
-          ) : isProcessingPalettes ? (
-            <>
-              <div>
-                <h3 className="text-2xl font-semibold text-foreground mb-2">
-                  Processing Color Palettes...
-                </h3>
-                <p className="text-muted-foreground">
-                  Extracting dominant colors from each image (real-time updates)
                 </p>
               </div>
             </>

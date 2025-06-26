@@ -6,6 +6,24 @@ import { Image } from '@/types';
 import { useImageStore } from '@/stores/imageStore';
 import { GroupEditorHandle } from '@/components/GroupEditor';
 
+// Detailed validation function (matching backend logic)
+function isValidSampleCode(code: string | null): boolean {
+  if (!code) return false;
+  
+  const trimmedCode = code.trim().toUpperCase();
+  
+  // Pattern 1: MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12]
+  const mwi1Pattern = /^MWI\.1\.([1-3])\.([1-9]|1[0-9]|2[0-4])\.([1-9]|10)[A-D]\.([1-9]|1[0-9]|2[0-5])\.([1-9]|1[0-2])$/;
+  
+  // Pattern 2: MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
+  const mwi0Pattern = /^MWI\.0\.([1-3])\.([1-6])\.([1-9]|1[0-3])\.([1-9]|1[0-9]|2[0-7])\.([1-9]|1[0-2])$/;
+  
+  // Pattern 3: KEN.0.[1-2].[1-9].[1-8].[1-11].[1-12]
+  const ken0Pattern = /^KEN\.0\.([1-2])\.([1-9])\.([1-8])\.([1-9]|1[0-1])\.([1-9]|1[0-2])$/;
+  
+  return mwi1Pattern.test(trimmedCode) || mwi0Pattern.test(trimmedCode) || ken0Pattern.test(trimmedCode);
+}
+
 interface ImageTableProps {
   images: Image[];
   selectedImageId: string | null;
@@ -51,47 +69,46 @@ export function ImageTable({
 
   const virtualItems = rowVirtualizer.getVirtualItems();
 
-  // Track how many rows are actually visible in viewport (excludes off-screen overscan)
-  const [visibleCount, setVisibleCount] = React.useState(0);
+  // Calculate visible range based on scroll position and viewport
   const [visibleRange, setVisibleRange] = React.useState<{start:number;end:number}>({start:1,end:1});
 
-  // Calculate visible range based on viewport intersection
+  // Calculate which rows are actually visible in viewport (not including overscan)
   useEffect(() => {
-    if (!parentRef.current) return;
+    if (!parentRef.current || images.length === 0) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Filter to only visible rows
-        const visibleRows = entries
-          .filter(entry => entry.isIntersecting)
-          .map(entry => {
-            const el = entry.target as HTMLElement;
-            const imageId = el.getAttribute('data-image-id');
-            return imageId ? images.findIndex(img => img.id === imageId) : -1;
-          })
-          .filter(index => index !== -1)
-          .sort((a, b) => a - b);
+    const updateVisibleRange = () => {
+      const scrollElement = parentRef.current;
+      if (!scrollElement) return;
 
-        if (visibleRows.length > 0) {
-          const firstVisible = visibleRows[0] + 1; // Convert to 1-based
-          const lastVisible = visibleRows[visibleRows.length - 1] + 1;
-          
-          setVisibleRange({ start: firstVisible, end: lastVisible });
-          setVisibleCount(visibleRows.length);
-        }
-      },
-      {
-        root: parentRef.current,
-        threshold: 0.5 // Row must be 50% visible to count
-      }
-    );
+      const scrollTop = scrollElement.scrollTop;
+      const viewportHeight = scrollElement.clientHeight;
+      const rowHeight = 64; // Fixed row height
 
-    // Observe all row elements
-    const rows = parentRef.current.querySelectorAll('[data-image-id]');
-    rows.forEach(row => observer.observe(row));
+      // Calculate first and last visible row indices (0-based)
+      const firstVisibleIndex = Math.floor(scrollTop / rowHeight);
+      const lastVisibleIndex = Math.min(
+        Math.floor((scrollTop + viewportHeight) / rowHeight),
+        images.length - 1
+      );
 
-    return () => observer.disconnect();
-  }, [images, rowVirtualizer.getVirtualItems()]);
+      // Convert to 1-based for display
+      const start = Math.max(1, firstVisibleIndex + 1);
+      const end = Math.max(1, lastVisibleIndex + 1);
+
+      setVisibleRange({ start, end });
+    };
+
+    // Initial calculation
+    updateVisibleRange();
+
+    // Listen for scroll events
+    const scrollElement = parentRef.current;
+    scrollElement.addEventListener('scroll', updateVisibleRange);
+
+    return () => {
+      scrollElement.removeEventListener('scroll', updateVisibleRange);
+    };
+  }, [images.length]);
 
   // Ensure selected item is visible (no forced centering)
   useEffect(() => {
@@ -189,11 +206,18 @@ export function ImageTable({
           : [];
 
       // Multi-row paste: sequential backend requests to ensure unique suffixes
-      if (targetIds.length > 1 && group) {
+      if (targetIds.length > 1 && group && group.trim()) {
         (async () => {
           for (const id of targetIds) {
+            // Validate format and set appropriate status
+            const newStatus = isValidSampleCode(group) ? 'user_grouped' : 'invalid_group';
+            
             // Mark as processing optimistically
-            useImageStore.getState().updateImage(id, { group, groupingStatus: 'processing' });
+            useImageStore.getState().updateImage(id, { 
+              group, 
+              status: newStatus,
+              groupingStatus: 'processing' 
+            });
 
             try {
               const updated = await fetch(`/api/images/${id}`, {
@@ -205,6 +229,7 @@ export function ImageTable({
               useImageStore.getState().updateImage(id, {
                 group: updated.group,
                 newName: updated.newName,
+                status: updated.status, // Use status from backend (includes validation)
                 groupingStatus: 'complete',
                 groupingConfidence: 1.0,
               });
@@ -217,7 +242,22 @@ export function ImageTable({
       } else {
         // Single row operation - let backend handle naming
         targetIds.forEach((id) => {
-          useImageStore.getState().updateImage(id, { group, groupingStatus: group ? 'complete' : 'pending', groupingConfidence: group ? 1.0 : 0 });
+          // Validate format and set appropriate status
+          let newStatus: 'pending' | 'extracting' | 'extracted' | 'invalid_group' | 'pending_grouping' | 'grouping' | 'auto_grouped' | 'ungrouped' | 'user_grouped';
+          if (!group || !group.trim()) {
+            newStatus = 'ungrouped'; // Group cleared
+          } else if (isValidSampleCode(group)) {
+            newStatus = 'user_grouped'; // Valid format
+          } else {
+            newStatus = 'invalid_group'; // Invalid format
+          }
+
+          useImageStore.getState().updateImage(id, { 
+            group, 
+            status: newStatus,
+            groupingStatus: group ? 'complete' : 'complete', 
+            groupingConfidence: group ? 1.0 : 0 
+          });
 
           fetch(`/api/images/${id}`, {
             method: 'PUT',
@@ -229,8 +269,9 @@ export function ImageTable({
               useImageStore.getState().updateImage(id, {
                 group: updated.group,
                 newName: updated.newName,
-                groupingStatus: updated.group ? 'complete' : 'pending',
-                groupingConfidence: updated.group ? 1.0 : 0,
+                status: updated.status, // Use status from backend (includes validation)
+                groupingStatus: updated.groupingStatus || 'complete',
+                groupingConfidence: updated.groupingConfidence || 1.0,
               });
             })
             .catch((err) => console.error('Failed to update group:', err));
@@ -269,8 +310,14 @@ export function ImageTable({
       if (targetIds.length === 0) return;
 
       targetIds.forEach((id) => {
-        // Optimistic clear
-        useImageStore.getState().updateImage(id, { group: '', newName: '', groupingStatus: 'pending', groupingConfidence: 0 });
+        // Optimistic clear - clearing group manually results in ungrouped status
+        useImageStore.getState().updateImage(id, { 
+          group: '', 
+          newName: '', 
+          status: 'ungrouped',
+          groupingStatus: 'complete', 
+          groupingConfidence: 0 
+        });
 
         fetch(`/api/images/${id}`, {
           method: 'PUT',
@@ -282,7 +329,8 @@ export function ImageTable({
             useImageStore.getState().updateImage(id, {
               group: updated.group || '',
               newName: '', // Always clear newName when group is cleared
-              groupingStatus: 'pending',
+              status: 'ungrouped',
+              groupingStatus: 'complete',
               groupingConfidence: 0,
             });
           })
@@ -493,7 +541,7 @@ export function ImageTable({
           )}
         </div>
         <span>
-          {visibleRange.start}-{visibleRange.end} of {images.length} rows
+          {visibleRange.end} of {images.length} rows
         </span>
       </div>
     </div>

@@ -1,14 +1,12 @@
 import React from 'react';
-import { Palette, Brain, Link2 } from 'lucide-react';
+import { Brain, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ProcessingStatus } from '@/types';
 import { ValidationIcon } from '../ui/ValidationIcon';
 
 interface StatusIconsProps {
-  paletteStatus: ProcessingStatus;
   geminiStatus: ProcessingStatus;
   groupingStatus: ProcessingStatus;
-  paletteConfidence?: number;
   geminiConfidence?: number;
   groupingConfidence?: number;
   hasCode?: boolean; // Whether Gemini found a sample code
@@ -16,10 +14,8 @@ interface StatusIconsProps {
 }
 
 export function StatusIcons({ 
-  paletteStatus, 
   geminiStatus, 
   groupingStatus,
-  paletteConfidence,
   geminiConfidence,
   groupingConfidence,
   hasCode,
@@ -83,11 +79,8 @@ export function StatusIcons({
 
   return (
     <div className="flex items-center justify-center gap-1">
-      {/* Palette Status */}
-      {getStatusIcon(paletteStatus, Palette, 'Color Palette', paletteConfidence)}
-      
       {/* Gemini Status */}
-      {getStatusIcon(geminiStatus, Brain, 'Code Detection', geminiConfidence, true)}
+      {getStatusIcon(geminiStatus, Brain, 'AI Analysis', geminiConfidence, true)}
       
       {/* Grouping Status */}
       {getStatusIcon(groupingStatus, Link2, 'Grouping', groupingConfidence)}

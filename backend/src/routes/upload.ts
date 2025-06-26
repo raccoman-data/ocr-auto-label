@@ -8,16 +8,16 @@ import { v4 as uuidv4 } from 'uuid';
 import mime from 'mime-types';
 import ExifReader from 'exifreader';
 import { prisma } from '../index';
-import { extractColorPalette } from '../services/palette';
-import { extractTextFromImage } from '../services/gemini';
+
+import { extractTextFromImage, isValidSampleCode } from '../services/gemini';
 import { extractImagesFromZip, isValidZipFile, getExtractionEstimate } from '../services/zipExtractor';
+import { autoGroupImages } from '../services/grouping';
 import pLimit from 'p-limit';
 
 const router = express.Router();
 
-// Rate limiting for parallel processing
-const paletteLimit = pLimit(100); // Same as before
-const geminiLimit = pLimit(20); // 20 concurrent Gemini requests
+// Rate limiting for parallel processing - reduced to prevent API rate limits
+const geminiLimit = pLimit(20); // 3 concurrent Gemini requests (conservative)
 
 // Use OS temp directory + app-specific folder to avoid bloating codebase
 const TEMP_DIR = path.join(os.tmpdir(), 'ocr-auto-label');
@@ -182,7 +182,7 @@ async function saveFileOnly(file: Express.Multer.File, originalName?: string, or
     console.error(`Failed to create thumbnail for ${file.originalname}:`, error);
   }
 
-  // Save to database with pending palette status
+  // Save to database with pending Gemini status
   const image = await prisma.image.create({
     data: {
       originalName: originalName || file.originalname,
@@ -192,13 +192,11 @@ async function saveFileOnly(file: Express.Multer.File, originalName?: string, or
       fileSize: file.size,
       timestamp: captureDate,
       group: '', // Will be set later during processing
-      paletteStatus: 'pending', // Mark as needing palette processing
-      palette: null,
-      paletteConfidence: 0,
       geminiStatus: 'pending',
       code: null,
       otherText: null,
       objectDesc: null,
+      objectColors: null,
       geminiConfidence: 0,
       groupingStatus: 'pending',
       groupingConfidence: 0,
@@ -214,13 +212,11 @@ async function saveFileOnly(file: Express.Multer.File, originalName?: string, or
     thumbnailPath: image.thumbnailPath,
     fileSize: image.fileSize,
     timestamp: image.timestamp,
-    paletteStatus: image.paletteStatus,
-    palette: image.palette,
-    paletteConfidence: image.paletteConfidence,
     geminiStatus: image.geminiStatus,
     code: image.code,
     otherText: image.otherText,
     objectDesc: image.objectDesc,
+    objectColors: image.objectColors,
     geminiConfidence: image.geminiConfidence,
     groupingStatus: image.groupingStatus,
     groupingConfidence: image.groupingConfidence,
@@ -256,135 +252,22 @@ router.post('/', upload.array('files'), async (req, res) => {
 
     console.log(`✅ Successfully uploaded ${uploadedImages.length} files`);
 
-    // Start parallel processing after successful upload
-    console.log('🚀 Starting parallel processing (palette + Gemini)...');
-    startParallelProcessing(uploadedImages.map(img => img.id));
+    // Start Gemini processing after successful upload
+    console.log('🚀 Starting Gemini processing...');
+    startGeminiProcessing(uploadedImages.map(img => img.id));
 
-    res.json({
+    return res.json({
       message: `Successfully uploaded ${uploadedImages.length} of ${req.files.length} files`,
       images: uploadedImages,
     });
 
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ error: 'Failed to upload files' });
+    return res.status(500).json({ error: 'Failed to upload files' });
   }
 });
 
-// POST /api/upload/process-palettes - Process color palettes for uploaded images
-router.post('/process-palettes', async (req, res) => {
-  try {
-    // Get all images that need palette processing
-    const images = await prisma.image.findMany({
-      where: {
-        paletteStatus: 'pending'
-      },
-      orderBy: {
-        timestamp: 'asc'
-      }
-    });
 
-    if (images.length === 0) {
-      return res.json({ message: 'No images need palette processing' });
-    }
-
-    console.log(`🎨 Starting palette processing for ${images.length} images...`);
-
-    // Process in batches of 10 for optimal performance
-    const batchSize = 10;
-    let processedCount = 0;
-
-    for (let i = 0; i < images.length; i += batchSize) {
-      const batch = images.slice(i, i + batchSize);
-      
-      console.log(`🔄 Starting batch ${Math.floor(i/batchSize) + 1}: processing images ${i + 1}-${Math.min(i + batchSize, images.length)}`);
-      
-      // Process batch in parallel
-      const batchPromises = batch.map(image => processPaletteForImage(image.id));
-      await Promise.all(batchPromises);
-      
-      processedCount += batch.length;
-      console.log(`✅ Completed batch ${Math.floor(i/batchSize) + 1}: ${processedCount}/${images.length} palettes done`);
-      
-      // Add a small delay between batches to allow UI updates
-      if (i + batchSize < images.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-
-    console.log(`✅ Completed palette processing for ${processedCount} images`);
-
-    res.json({
-      message: `Successfully processed palettes for ${processedCount} images`,
-      processedCount
-    });
-
-  } catch (error) {
-    console.error('Palette processing error:', error);
-    res.status(500).json({ error: 'Failed to process palettes' });
-  }
-});
-
-// Process palette for a specific image
-async function processPaletteForImage(imageId: string): Promise<void> {
-  try {
-    // Get image from database
-    const image = await prisma.image.findUnique({
-      where: { id: imageId }
-    });
-
-    if (!image) {
-      console.error(`Image ${imageId} not found`);
-      return;
-    }
-
-    // Update status to processing
-    await prisma.image.update({
-      where: { id: imageId },
-      data: { paletteStatus: 'processing' }
-    });
-
-    // Broadcast processing status update
-    broadcastPaletteUpdate(imageId, { paletteStatus: 'processing' });
-
-    console.log(`🎨 Extracting palette for ${image.originalName}...`);
-
-    // Extract palette - read file from disk
-    const fileBuffer = await fs.readFile(image.filePath);
-    const paletteResult = await extractColorPalette(fileBuffer);
-
-    // Update database with results
-    const updatedImage = await prisma.image.update({
-      where: { id: imageId },
-      data: {
-        paletteStatus: 'complete',
-        palette: JSON.stringify(paletteResult.palette),
-        paletteConfidence: paletteResult.confidence,
-      }
-    });
-
-    // Broadcast completion update with palette data
-    broadcastPaletteUpdate(imageId, {
-      paletteStatus: 'complete',
-      palette: JSON.stringify(paletteResult.palette),
-      paletteConfidence: paletteResult.confidence,
-    });
-
-    console.log(`✅ Palette extracted for ${image.originalName}`);
-
-  } catch (error) {
-    console.error(`Failed to process palette for image ${imageId}:`, error);
-    
-    // Update status to error
-    await prisma.image.update({
-      where: { id: imageId },
-      data: { paletteStatus: 'error' }
-    });
-
-    // Broadcast error update
-    broadcastPaletteUpdate(imageId, { paletteStatus: 'error' });
-  }
-}
 
 // Function to clean up old data and files
 async function cleanupOldData() {
@@ -435,7 +318,7 @@ function sanitizeFileName(name: string): string {
 }
 
 // Generate smart filename based on group and existing files
-async function generateSmartFilename(group: string, currentImageId: string, originalName: string): Promise<string> {
+export async function generateSmartFilename(group: string, currentImageId: string, originalName: string): Promise<string> {
   const fileExtension = path.extname(originalName);
   
   // Sanitize the group name for filesystem safety
@@ -499,23 +382,26 @@ async function generateSmartFilename(group: string, currentImageId: string, orig
   return finalName;
 }
 
-// Start parallel processing for palette extraction and Gemini OCR
-async function startParallelProcessing(imageIds: string[]) {
-  console.log(`🚀 Starting parallel processing for ${imageIds.length} images...`);
+// Start Gemini processing for uploaded images
+async function startGeminiProcessing(imageIds: string[]) {
+  console.log(`🚀 Starting Gemini processing for ${imageIds.length} images...`);
   
-  // Process all images in parallel - both palette and Gemini
+  // Process all images in parallel with Gemini
   const processingPromises = imageIds.map(imageId => {
-    return Promise.all([
-      paletteLimit(() => processPaletteForImage(imageId)),
-      geminiLimit(() => processGeminiForImage(imageId))
-    ]);
+    return geminiLimit(() => processGeminiForImage(imageId));
   });
 
   try {
     await Promise.all(processingPromises);
-    console.log('✅ All parallel processing completed');
+    console.log('✅ All Gemini processing completed');
+    
+    // Start auto-grouping for images without codes
+    console.log('🔗 Starting auto-grouping process...');
+    await autoGroupImages();
+    console.log('✅ Auto-grouping completed');
+    
   } catch (error) {
-    console.error('❌ Error in parallel processing:', error);
+    console.error('❌ Error in Gemini processing:', error);
   }
 }
 
@@ -532,34 +418,54 @@ export async function processGeminiForImage(imageId: string): Promise<void> {
       return;
     }
 
-    // Update status to processing
+    // Update status to extracting
     await prisma.image.update({
       where: { id: imageId },
-      data: { geminiStatus: 'processing' }
+      data: { 
+        geminiStatus: 'processing',
+        status: 'extracting'
+      }
     });
 
     // Broadcast processing status update
-    broadcastGeminiUpdate(imageId, { geminiStatus: 'processing' });
+    broadcastGeminiUpdate(imageId, { 
+      geminiStatus: 'processing',
+      status: 'extracting'
+    });
 
     console.log(`🧠 Processing Gemini OCR for ${image.originalName}...`);
 
     // Extract text using Gemini
     const geminiResult = await extractTextFromImage(image.filePath);
 
-    // Determine group assignment and file naming
+    // Determine appropriate status and data based on results
+    let newStatus: string;
     let newName = image.newName || ''; // Keep blank if no name was previously set
     let group = image.group || ''; // Keep existing group if it exists
     let groupingStatus = image.groupingStatus;
     let groupingConfidence = image.groupingConfidence;
-    
-    if (geminiResult.code && !image.group) {
-      // Only auto-assign group if one doesn't exist already
-      group = geminiResult.code;
-      groupingStatus = 'complete';
-      groupingConfidence = 1.0;
-      
-      // Generate new filename using the smart naming logic
-      newName = await generateSmartFilename(group, imageId, image.originalName);
+
+    if (geminiResult.code) {
+      // Code was found - check if it's valid
+      if (isValidSampleCode(geminiResult.code)) {
+        // Valid code found
+        newStatus = 'extracted';
+        group = geminiResult.code;
+        groupingStatus = 'complete';
+        groupingConfidence = 1.0;
+        newName = await generateSmartFilename(group, imageId, image.originalName);
+        console.log(`✅ Valid code extracted: ${geminiResult.code}`);
+      } else {
+        // Invalid code found
+        newStatus = 'invalid_group';
+        group = geminiResult.code;
+        newName = await generateSmartFilename(group, imageId, image.originalName);
+        console.log(`⚠️ Invalid code structure: ${geminiResult.code}`);
+      }
+    } else {
+      // No code found - will need grouping
+      newStatus = 'pending_grouping';
+      console.log(`🔍 No code found, will need grouping`);
     }
 
     // Update database with results
@@ -567,9 +473,11 @@ export async function processGeminiForImage(imageId: string): Promise<void> {
       where: { id: imageId },
       data: {
         geminiStatus: 'complete',
+        status: newStatus,
         code: geminiResult.code,
         otherText: geminiResult.otherText,
         objectDesc: geminiResult.objectDesc,
+        objectColors: geminiResult.objectColors ? JSON.stringify(geminiResult.objectColors) : null,
         geminiConfidence: geminiResult.confidence,
         newName: newName,
         group: group,
@@ -581,9 +489,11 @@ export async function processGeminiForImage(imageId: string): Promise<void> {
     // Broadcast completion update
     broadcastGeminiUpdate(imageId, {
       geminiStatus: 'complete',
+      status: newStatus,
       code: geminiResult.code,
       otherText: geminiResult.otherText,
       objectDesc: geminiResult.objectDesc,
+      objectColors: geminiResult.objectColors ? JSON.stringify(geminiResult.objectColors) : null,
       geminiConfidence: geminiResult.confidence,
       newName: newName,
       group: group,
@@ -591,24 +501,30 @@ export async function processGeminiForImage(imageId: string): Promise<void> {
       groupingConfidence: groupingConfidence,
     });
 
-    console.log(`✅ Gemini OCR completed for ${image.originalName} - Code: ${geminiResult.code || 'none'}`);
+    console.log(`✅ Gemini OCR completed for ${image.originalName} - Status: ${newStatus}`);
 
   } catch (error) {
     console.error(`Failed to process Gemini OCR for image ${imageId}:`, error);
     
-    // Update status to error
+    // Update status to error/pending
     await prisma.image.update({
       where: { id: imageId },
-      data: { geminiStatus: 'error' }
+      data: { 
+        geminiStatus: 'error',
+        status: 'pending'
+      }
     });
 
     // Broadcast error update
-    broadcastGeminiUpdate(imageId, { geminiStatus: 'error' });
+    broadcastGeminiUpdate(imageId, { 
+      geminiStatus: 'error',
+      status: 'pending'
+    });
   }
 }
 
 // Function to broadcast Gemini updates to all connected clients
-function broadcastGeminiUpdate(imageId: string, updates: any) {
+export function broadcastGeminiUpdate(imageId: string, updates: any) {
   const data = JSON.stringify({
     type: 'gemini_update',
     imageId,
@@ -635,10 +551,10 @@ function broadcastGeminiUpdate(imageId: string, updates: any) {
 router.post('/cleanup', async (req, res) => {
   try {
     await cleanupOldData();
-    res.json({ message: 'Cleanup completed successfully' });
+    return res.json({ message: 'Cleanup completed successfully' });
   } catch (error) {
     console.error('Cleanup error:', error);
-    res.status(500).json({ error: 'Failed to cleanup data' });
+    return res.status(500).json({ error: 'Failed to cleanup data' });
   }
 });
 
@@ -669,22 +585,22 @@ router.post('/folder', upload.array('files'), async (req, res) => {
 
     console.log(`✅ Successfully processed ${uploadedImages.length} files from folder`);
 
-    // Start parallel processing after successful upload
-    console.log('🚀 Starting parallel processing (palette + Gemini)...');
-    startParallelProcessing(uploadedImages.map(img => img.id));
+    // Start Gemini processing after successful upload
+    console.log('🚀 Starting Gemini processing...');
+    startGeminiProcessing(uploadedImages.map(img => img.id));
 
-    res.json({
+    return res.json({
       message: `Successfully uploaded ${uploadedImages.length} of ${req.files.length} files`,
       images: uploadedImages,
     });
 
   } catch (error) {
     console.error('Folder upload error:', error);
-    res.status(500).json({ error: 'Failed to upload folder' });
+    return res.status(500).json({ error: 'Failed to upload folder' });
   }
 });
 
-// GET /api/upload/progress - Server-Sent Events for real-time processing updates (palette + Gemini)
+// GET /api/upload/progress - Server-Sent Events for real-time Gemini processing updates
 router.get('/progress', (req, res) => {
   // Set up SSE headers
   res.writeHead(200, {
@@ -777,11 +693,11 @@ router.post('/zip', upload.single('file'), async (req, res) => {
 
     console.log(`✅ Successfully extracted and processed ${uploadedImages.length} images from ZIP`);
 
-    // Start parallel processing after successful upload
-    console.log('🚀 Starting parallel processing (palette + Gemini)...');
-    startParallelProcessing(uploadedImages.map(img => img.id));
+    // Start Gemini processing after successful upload
+    console.log('🚀 Starting Gemini processing...');
+    startGeminiProcessing(uploadedImages.map(img => img.id));
 
-    res.json({
+    return res.json({
       message: `Successfully extracted ${uploadedImages.length} images from ZIP file`,
       images: uploadedImages,
       extractionTime: estimatedSeconds
@@ -802,35 +718,13 @@ router.post('/zip', upload.single('file'), async (req, res) => {
       }
     }
     
-    res.status(500).json({ error: errorMessage });
+    return res.status(500).json({ error: errorMessage });
   }
 });
 
 // Store active SSE connections
 const sseClients = new Map<number, any>();
 
-// Function to broadcast palette updates to all connected clients
-function broadcastPaletteUpdate(imageId: string, updates: any) {
-  const data = JSON.stringify({
-    type: 'palette_update',
-    imageId,
-    updates
-  });
 
-  sseClients.forEach((client) => {
-    try {
-      client.write(`data: ${data}\n\n`);
-      if (client.flush) {
-        try {
-          client.flush();
-        } catch (_) {
-          // Ignore flush errors (e.g., not supported)
-        }
-      }
-    } catch (error) {
-      // Client disconnected, will be cleaned up by event handlers
-    }
-  });
-}
 
 export default router; 

@@ -1,10 +1,13 @@
 import React from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useImageStore } from '@/stores/imageStore';
 
 interface InlineNameEditorProps {
   currentName: string;
   placeholder?: string;
   originalName?: string; // Add originalName to extract extension from
+  imageId?: string; // Add imageId to check for duplicates
   onSave: (newName: string) => void;
   variant?: 'table' | 'sidebar';
   className?: string;
@@ -17,15 +20,20 @@ const EXT_REGEX = /(\.[^.]+)$/;
  * InlineNameEditor – lightly-wrapped `contentEditable` filename editor.
  * We keep the file extension (e.g. ".jpg") outside of the editable region so
  * users always start typing BEFORE the extension – just like Finder / Explorer.
+ * 
+ * Now includes duplicate name detection with visual warnings.
  */
 export function InlineNameEditor({
   currentName,
   placeholder = 'Unnamed',
   originalName,
+  imageId,
   onSave,
   variant = 'table',
   className,
 }: InlineNameEditorProps) {
+  const { images } = useImageStore();
+  
   // Split the current name into base name + extension once on mount / prop change
   const splitName = React.useCallback((name: string) => {
     const match = name.match(EXT_REGEX);
@@ -51,6 +59,17 @@ export function InlineNameEditor({
   const [{ base, ext }, setParts] = React.useState(() => splitName(currentName));
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [isEditing, setIsEditing] = React.useState(false);
+
+  // Check for duplicate names
+  const isDuplicate = React.useMemo(() => {
+    if (!base.trim() || !imageId) return false;
+    
+    const fullName = base.trim() + ext;
+    return images.some(img => 
+      img.id !== imageId && 
+      img.newName?.trim() === fullName
+    );
+  }, [base, ext, imageId, images]);
 
   // Keep local state in sync with prop updates (e.g. external rename)
   React.useEffect(() => {
@@ -84,7 +103,21 @@ export function InlineNameEditor({
   };
 
   const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
-    setParts({ base: e.currentTarget.innerText, ext });
+    // Convert spaces to underscores for valid filenames
+    const sanitizedText = e.currentTarget.innerText.replace(/\s+/g, '_');
+    setParts({ base: sanitizedText, ext });
+    
+    // Update the content if sanitization changed the text
+    if (sanitizedText !== e.currentTarget.innerText) {
+      e.currentTarget.innerText = sanitizedText;
+      // Keep cursor at end after sanitization
+      const range = document.createRange();
+      range.selectNodeContents(e.currentTarget);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
   };
 
   const handleFocus = () => {
@@ -106,6 +139,28 @@ export function InlineNameEditor({
     setIsEditing(false);
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    // Get pasted text and sanitize it
+    const pastedText = e.clipboardData.getData('text/plain');
+    const sanitizedText = pastedText.replace(/\s+/g, '_');
+    
+    // Insert sanitized text at current cursor position
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(document.createTextNode(sanitizedText));
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    
+    // Update state with the new content
+    const newContent = e.currentTarget.innerText;
+    setParts({ base: newContent, ext });
+  };
+
   // Keep caret at end while editing to avoid RTL-like behavior when React re-renders
   React.useEffect(() => {
     if (isEditing && contentRef.current) {
@@ -124,16 +179,18 @@ export function InlineNameEditor({
     : 'text-xs';
 
   return (
-    <div className={cn('inline-flex items-center', className)}>
+    <div className={cn('inline-flex items-center gap-1', className)}>
       {/* Editable base-name */}
       <div
         ref={contentRef}
         className={cn(
-          'min-h-[1.5rem] rounded hover:bg-accent/30 focus:bg-accent/30 focus:ring-2 focus:ring-primary/40 transition-colors outline-none',
+          'min-h-[1.5rem] rounded hover:bg-accent/30 focus:bg-accent/30 focus:ring-2 transition-colors outline-none',
           !base && 'text-muted-foreground italic',
           variantClasses,
-          'border-none bg-transparent',
-          'w-full'
+          'border-none bg-transparent w-full',
+          // Duplicate name styling
+          isDuplicate && !isEditing && 'ring-2 ring-destructive/50 bg-destructive/5',
+          isDuplicate && isEditing && 'focus:ring-destructive/60'
         )}
         dir="ltr"
         contentEditable
@@ -143,13 +200,33 @@ export function InlineNameEditor({
         onInput={handleInput}
         onFocus={handleFocus}
         onBlur={handleBlur}
+        onPaste={handlePaste}
         data-placeholder={placeholder}
+        title={isDuplicate ? 'Duplicate name detected!' : undefined}
       >
         {base}
       </div>
+      
       {/* Static extension (non-editable) */}
       {ext && (
-        <span className={cn('text-muted-foreground select-none', variant === 'table' ? 'text-sm' : 'text-xs', '-ml-px')}>{ext}</span>
+        <span className={cn(
+          'text-muted-foreground select-none -ml-px',
+          variant === 'table' ? 'text-sm' : 'text-xs'
+        )}>
+          {ext}
+        </span>
+      )}
+      
+      {/* Duplicate warning icon */}
+      {isDuplicate && !isEditing && (
+        <div title="Duplicate name detected!">
+          <AlertTriangle 
+            className={cn(
+              'flex-shrink-0 text-destructive',
+              variant === 'table' ? 'w-4 h-4' : 'w-3 h-3'
+            )}
+          />
+        </div>
       )}
     </div>
   );

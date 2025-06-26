@@ -6,6 +6,7 @@ export interface GeminiResult {
   code: string | null;
   otherText: string | null;
   objectDesc: string | null;
+  objectColors: Array<{color: string, name: string}> | null;
   confidence: number;
 }
 
@@ -32,6 +33,30 @@ async function preprocessImageForOCR(imageBuffer: Buffer): Promise<Buffer> {
     console.warn('Image preprocessing failed, using original:', error);
     return imageBuffer;
   }
+}
+
+/**
+ * Validate if a sample code follows the expected pattern
+ * Valid patterns based on the Gemini prompt specification:
+ * 1. MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12] 
+ * 2. MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
+ * 3. KEN.0.[1-2].[1-9].[1-8].[1-11].[1-12]
+ */
+export function isValidSampleCode(code: string | null): boolean {
+  if (!code) return false;
+  
+  const trimmedCode = code.trim().toUpperCase();
+  
+  // Pattern 1: MWI.1.[1-3].[1-24].[1-10][A-D].[1-25].[1-12]
+  const mwi1Pattern = /^MWI\.1\.([1-3])\.([1-9]|1[0-9]|2[0-4])\.([1-9]|10)[A-D]\.([1-9]|1[0-9]|2[0-5])\.([1-9]|1[0-2])$/;
+  
+  // Pattern 2: MWI.0.[1-3].[1-6].[1-13].[1-27].[1-12]
+  const mwi0Pattern = /^MWI\.0\.([1-3])\.([1-6])\.([1-9]|1[0-3])\.([1-9]|1[0-9]|2[0-7])\.([1-9]|1[0-2])$/;
+  
+  // Pattern 3: KEN.0.[1-2].[1-9].[1-8].[1-11].[1-12]
+  const ken0Pattern = /^KEN\.0\.([1-2])\.([1-9])\.([1-8])\.([1-9]|1[0-1])\.([1-9]|1[0-2])$/;
+  
+  return mwi1Pattern.test(trimmedCode) || mwi0Pattern.test(trimmedCode) || ken0Pattern.test(trimmedCode);
 }
 
 /**
@@ -98,11 +123,18 @@ SELF-VALIDATION CHECKLIST:
 
 READ CHARACTER BY CHARACTER, validate against patterns, and self-correct if needed.
 
+Additionally, analyze the PRIMARY OBJECT (not background) and extract its top 3 most prominent colors.
+
 Respond only with JSON:
 {
   "code": "MWI… or KEN… sample code if found, otherwise NA",
   "otherText": "Any other text visible in the image, otherwise NA", 
-  "objectDesc": "Describe the main object in 3 words or less, otherwise NA"
+  "objectDesc": "Describe the main object in 3 words or less, otherwise NA",
+  "objectColors": [
+    {"color": "#RRGGBB", "name": "descriptive color name"},
+    {"color": "#RRGGBB", "name": "descriptive color name"},
+    {"color": "#RRGGBB", "name": "descriptive color name"}
+  ]
 }`;
 
     // Convert image to base64 for Gemini API
@@ -115,10 +147,30 @@ Respond only with JSON:
       },
     };
 
-    // Generate content with image and prompt
-    const result = await model.generateContent([prompt, imagePart]);
-    const response = await result.response;
-    const text = response.text();
+    // Generate content with image and prompt - with retry logic
+    let text: string = '';
+    const maxRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        text = response.text();
+        break; // Success, exit retry loop
+        
+      } catch (error: any) {
+        console.log(`Gemini API attempt ${attempt}/${maxRetries} failed:`, error.message);
+        
+        if (attempt === maxRetries) {
+          throw error; // Re-throw on final attempt
+        }
+        
+        // Exponential backoff: wait 1s, 2s, 4s
+        const waitTime = Math.pow(2, attempt - 1) * 1000;
+        console.log(`Retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
 
     // Parse the JSON response - handle markdown code blocks
     let jsonText = text.trim();
@@ -137,18 +189,21 @@ Respond only with JSON:
       const code = parsed.code === 'NA' ? null : parsed.code;
       const otherText = parsed.otherText === 'NA' ? null : parsed.otherText;
       const objectDesc = parsed.objectDesc === 'NA' ? null : parsed.objectDesc;
+      const objectColors = parsed.objectColors && Array.isArray(parsed.objectColors) && parsed.objectColors.length > 0 ? parsed.objectColors : null;
       
       // Calculate confidence based on what was found
       let confidence = 0.5; // Base confidence
       if (code) confidence += 0.4; // High value for finding sample code
       if (otherText) confidence += 0.1; // Some value for other text
       if (objectDesc) confidence += 0.1; // Some value for object description
+      if (objectColors) confidence += 0.1; // Some value for object colors
       confidence = Math.min(confidence, 1.0); // Cap at 1.0
 
       return {
         code,
         otherText,
         objectDesc,
+        objectColors,
         confidence
       };
 
@@ -166,6 +221,7 @@ Respond only with JSON:
       code: null,
       otherText: null,
       objectDesc: null,
+      objectColors: null,
       confidence: 0
     };
   }

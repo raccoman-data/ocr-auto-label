@@ -10,16 +10,17 @@ export interface Image {
   group?: string;
   
   // Processing status
-  paletteStatus: 'pending' | 'processing' | 'complete' | 'error';
   geminiStatus: 'pending' | 'processing' | 'complete' | 'error';
   groupingStatus: 'pending' | 'processing' | 'complete' | 'error';
   
+  // Overall comprehensive status
+  status: 'pending' | 'extracting' | 'extracted' | 'invalid_group' | 'pending_grouping' | 'grouping' | 'auto_grouped' | 'ungrouped' | 'user_grouped';
+  
   // Extracted data
-  palette?: ColorPalette[];
-  paletteConfidence?: number;
   code?: string;
   otherText?: string;
   objectDesc?: string;
+  objectColors?: Array<{color: string, name: string}>;
   
   // Confidence scores
   geminiConfidence?: number;
@@ -32,12 +33,7 @@ export interface Image {
 // Processing status enum
 export type ProcessingStatus = 'pending' | 'processing' | 'complete' | 'error';
 
-// Color palette structure
-export interface ColorPalette {
-  color: string;
-  percentage: number;
-  name: string;
-}
+
 
 // API response types
 export interface ApiResponse<T> {
@@ -70,8 +66,8 @@ export interface UploadResponse {
   }>;
 }
 
-// Filter options for the table
-export type FilterOption = 'all' | 'unknown' | 'conflict' | 'invalid_codes';
+// Filter options for the table - summary views only
+export type FilterOption = 'all' | 'complete' | 'pending' | 'needs_attention';
 
 // Table column definitions
 export interface TableColumn {

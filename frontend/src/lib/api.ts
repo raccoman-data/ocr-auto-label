@@ -149,25 +149,20 @@ export async function healthCheck(): Promise<{ status: string; timestamp: string
   return apiRequest<{ status: string; timestamp: string; version: string }>('/health');
 }
 
-// Process color palettes for uploaded images
-export async function processPalettes(): Promise<{ message: string; processedCount: number }> {
-  return apiRequest<{ message: string; processedCount: number }>('/upload/process-palettes', {
-    method: 'POST',
-  });
-}
+
 
 // Transform API response to match our Image interface
 function transformImageData(apiImage: any): Image {
-  // Parse palette if it exists and is a string
-  let palette = null;
-  if (apiImage.palette) {
+  // Parse object colors if it exists and is a string
+  let objectColors = null;
+  if (apiImage.objectColors) {
     try {
-      palette = typeof apiImage.palette === 'string' 
-        ? JSON.parse(apiImage.palette) 
-        : apiImage.palette;
+      objectColors = typeof apiImage.objectColors === 'string' 
+        ? JSON.parse(apiImage.objectColors) 
+        : apiImage.objectColors;
     } catch (error) {
-      console.warn('Failed to parse palette data:', error);
-      palette = null;
+      console.warn('Failed to parse object colors data:', error);
+      objectColors = null;
     }
   }
 
@@ -176,12 +171,13 @@ function transformImageData(apiImage: any): Image {
     timestamp: new Date(apiImage.timestamp),
     createdAt: new Date(apiImage.createdAt),
     updatedAt: new Date(apiImage.updatedAt),
-    palette,
+    objectColors,
+    // Use the comprehensive status from the backend
+    status: apiImage.status || 'pending',
     // Map backend fields to frontend interface
     filename: apiImage.filePath ? apiImage.filePath.split('/').pop() : '',
     size: apiImage.fileSize,
     mimeType: 'image/jpeg', // Default since we don't store this in new schema
-    status: 'uploaded', // Default status
     geminiResponse: apiImage.code || apiImage.otherText || apiImage.objectDesc || null,
   };
 } 

@@ -86,6 +86,9 @@ interface ImageStore {
   // SSE connection management
   connectToUpdates: () => void;
   disconnectFromUpdates: () => void;
+  
+  // Duplicate name detection helper
+  getDuplicateNames: () => Set<string>;
 }
 
 const initialDragState: DragState = {
@@ -235,19 +238,31 @@ export const useImageStore = create<ImageStore>()(
         
         let filtered = images;
         
-        // Apply filter
-        if (filter === 'unknown') {
-          filtered = filtered.filter(img => 
-            img.geminiStatus !== 'complete' && img.groupingStatus !== 'complete'
-          );
-        } else if (filter === 'conflict') {
-          filtered = filtered.filter(img => 
-            img.geminiStatus === 'error' || img.paletteStatus === 'error'
-          );
-        } else if (filter === 'invalid_codes') {
-          filtered = filtered.filter(img => 
-            img.code && getValidationStatus(img.code) === 'invalid'
-          );
+        // Apply comprehensive status filter
+        if (filter === 'complete') {
+          // Complete: extracted, auto_grouped, user_grouped
+          filtered = filtered.filter(img => {
+            const status = img.status || 'pending';
+            return ['extracted', 'auto_grouped', 'user_grouped'].includes(status);
+          });
+        } else if (filter === 'pending') {
+          // Pending: pending, extracting, pending_grouping, grouping
+          filtered = filtered.filter(img => {
+            const status = img.status || 'pending';
+            return ['pending', 'extracting', 'pending_grouping', 'grouping'].includes(status);
+          });
+        } else if (filter === 'needs_attention') {
+          // Needs attention: invalid_group, ungrouped
+          filtered = filtered.filter(img => {
+            const status = img.status || 'pending';
+            return ['invalid_group', 'ungrouped'].includes(status);
+          });
+        } else if (filter !== 'all') {
+          // Individual status filters
+          filtered = filtered.filter(img => {
+            const status = img.status || 'pending';
+            return status === filter;
+          });
         }
         
         // Apply search
@@ -298,6 +313,33 @@ export const useImageStore = create<ImageStore>()(
       getSelectedImages: () => {
         const { images, selection } = get();
         return images.filter(img => selection.selectedIds.has(img.id));
+      },
+      
+      // Duplicate name detection helper
+      getDuplicateNames: () => {
+        const { images } = get();
+        const nameCount = new Map<string, string[]>();
+        const duplicateIds = new Set<string>();
+        
+        // Count names (ignore empty names)
+        images.forEach(img => {
+          const name = img.newName?.trim();
+          if (name) {
+            if (!nameCount.has(name)) {
+              nameCount.set(name, []);
+            }
+            nameCount.get(name)!.push(img.id);
+          }
+        });
+        
+        // Find duplicates
+        nameCount.forEach((ids, name) => {
+          if (ids.length > 1) {
+            ids.forEach(id => duplicateIds.add(id));
+          }
+        });
+        
+        return duplicateIds;
       },
       
       // New actions

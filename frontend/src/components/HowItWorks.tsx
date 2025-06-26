@@ -19,7 +19,7 @@ export function HowItWorks({ className = '' }: { className?: string }) {
     {
       icon: <Palette className="w-4 h-4" />,
       title: "Smart Grouping", 
-      description: "Match unlabeled images using color and timing",
+      description: "Auto-group unlabeled images by color similarity and timing within ±3 minutes",
       color: "text-slate-600"
     },
     {

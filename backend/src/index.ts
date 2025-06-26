@@ -158,8 +158,4 @@ app.listen(PORT, () => {
 export function cleanupTempFiles() {
   console.log(`🧹 Cleaning up temp files in: ${TEMP_DIR}`);
   // This will be called on graceful shutdown
-} 
-export function cleanupTempFiles() {
-  console.log(`🧹 Cleaning up temp files in: ${TEMP_DIR}`);
-  // This will be called on graceful shutdown
-} 
+}

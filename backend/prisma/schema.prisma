@@ -21,18 +21,19 @@ model Image {
   group        String?
   
   // Processing status - tracks what stage each image is in
-  paletteStatus   String @default("pending") // pending, processing, complete, error
   geminiStatus    String @default("pending") // pending, processing, complete, error
   groupingStatus  String @default("pending") // pending, processing, complete, error
   
+  // Overall processing status for UI display
+  status String @default("pending") // pending, extracting, extracted, invalid_group, pending_grouping, grouping, auto_grouped, ungrouped, user_grouped
+  
   // Extracted data from processing
-  palette      String?  // JSON string of Array of {color: string, percentage: number}
   code         String?  // Extracted sample code (MWI.1.3.45, etc.)
   otherText    String?  // Other text found in image
   objectDesc   String?  // 3-word object description
+  objectColors String?  // JSON string of Array of {color: string, name: string} - top 3 object colors from Gemini
   
   // Confidence scores for grouping decisions (shown in sidebar)
-  paletteConfidence  Float? // 0-1 confidence for palette extraction
   geminiConfidence   Float? // 0-1 confidence for code detection
   groupingConfidence Float? // 0-1 confidence for auto-grouping
   

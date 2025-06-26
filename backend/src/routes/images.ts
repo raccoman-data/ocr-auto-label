@@ -2,14 +2,15 @@ import express from 'express';
 import path from 'path';
 import { prisma } from '../index';
 import { processGeminiForImage } from './upload';
+import { isValidSampleCode } from '../services/gemini';
 
 const router = express.Router();
 
-// Helper function to parse palette JSON string for frontend consumption
+// Helper function to parse object colors JSON string for frontend consumption
 function transformImageForResponse(image: any) {
   return {
     ...image,
-    palette: image.palette ? JSON.parse(image.palette) : null
+    objectColors: image.objectColors ? JSON.parse(image.objectColors) : null
   };
 }
 
@@ -168,11 +169,11 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Image not found' });
     }
 
-    res.json(transformImageForResponse(image));
+    return res.json(transformImageForResponse(image));
 
   } catch (error) {
     console.error('Error fetching image:', error);
-    res.status(500).json({ error: 'Failed to fetch image' });
+    return res.status(500).json({ error: 'Failed to fetch image' });
   }
 });
 
@@ -193,19 +194,29 @@ router.put('/:id', async (req, res) => {
     let finalNewName = newName;
     let groupingStatus = image.groupingStatus;
     let groupingConfidence = image.groupingConfidence;
+    let status = image.status;
 
     // If group is being updated, handle smart filename generation
     if (group !== undefined && group !== image.group) {
       if (group && group.trim()) {
-        // Group is being assigned/changed
+        // Group is being assigned/changed - ALWAYS override any existing status
+        // This allows users to override extracted, auto_grouped, ungrouped, etc.
         finalNewName = await generateSmartFilename(group, id, image.originalName);
         groupingStatus = 'complete';
         groupingConfidence = 1.0;
+        
+        // Validate the group format and set appropriate status
+        if (isValidSampleCode(group)) {
+          status = 'user_grouped'; // Valid format - mark as user grouped
+        } else {
+          status = 'invalid_group'; // Invalid format
+        }
       } else {
-        // Group is being removed - clear the name too
+        // Group is being removed - clear the name and mark as ungrouped
         finalNewName = '';
-        groupingStatus = 'pending';
+        groupingStatus = 'complete';
         groupingConfidence = 0;
+        status = 'ungrouped'; // Mark as ungrouped when user manually clears group
       }
     }
 
@@ -214,17 +225,18 @@ router.put('/:id', async (req, res) => {
       data: {
         ...(finalNewName !== undefined && { newName: finalNewName }),
         ...(group !== undefined && { group }),
+        status,
         groupingStatus,
         groupingConfidence,
         updatedAt: new Date(),
       },
     });
 
-    res.json(transformImageForResponse(updatedImage));
+    return res.json(transformImageForResponse(updatedImage));
 
   } catch (error) {
     console.error('Error updating image:', error);
-    res.status(500).json({ error: 'Failed to update image' });
+    return res.status(500).json({ error: 'Failed to update image' });
   }
 });
 
@@ -244,20 +256,46 @@ router.patch('/:id', async (req, res) => {
 
     // For PATCH, we do simpler updates without the smart filename logic
     // This is mainly used for direct name edits from the frontend
+    let statusUpdate = {};
+    
+    // If user is manually editing name or group, validate and set appropriate status
+    // This allows users to override extracted, auto_grouped, ungrouped, etc.
+    if ((newName !== undefined && newName !== image.newName) || 
+        (group !== undefined && group !== image.group)) {
+      
+      if (group !== undefined) {
+        // Group is being changed - validate format
+        if (group && group.trim()) {
+          if (isValidSampleCode(group)) {
+            statusUpdate = { status: 'user_grouped' }; // Valid format
+                     } else {
+             statusUpdate = { status: 'invalid_group' }; // Invalid format
+           }
+        } else {
+          statusUpdate = { status: 'ungrouped' }; // Group cleared
+        }
+      } else {
+        // Only name changed - don't change status (preserve current status)
+        // Name-only changes shouldn't affect grouping status
+        statusUpdate = {};
+      }
+    }
+
     const updatedImage = await prisma.image.update({
       where: { id },
       data: {
-        ...(newName !== undefined && { newName }),
+        ...(newName !== undefined && { newName: sanitizeFileName(newName) }),
         ...(group !== undefined && { group }),
+        ...statusUpdate,
         updatedAt: new Date(),
       },
     });
 
-    res.json(transformImageForResponse(updatedImage));
+    return res.json(transformImageForResponse(updatedImage));
 
   } catch (error) {
     console.error('Error updating image:', error);
-    res.status(500).json({ error: 'Failed to update image' });
+    return res.status(500).json({ error: 'Failed to update image' });
   }
 });
 
@@ -277,7 +315,7 @@ router.put('/bulk', async (req, res) => {
         const updatedImage = await prisma.image.update({
           where: { id: update.id },
           data: {
-            ...(update.newName !== undefined && { newName: update.newName }),
+            ...(update.newName !== undefined && { newName: sanitizeFileName(update.newName) }),
             ...(update.group !== undefined && { group: update.group }),
             updatedAt: new Date(),
           },
@@ -289,14 +327,14 @@ router.put('/bulk', async (req, res) => {
       }
     }
 
-    res.json({
+    return res.json({
       message: `Successfully updated ${results.length} of ${updates.length} images`,
       images: results,
     });
 
   } catch (error) {
     console.error('Error bulk updating images:', error);
-    res.status(500).json({ error: 'Failed to bulk update images' });
+    return res.status(500).json({ error: 'Failed to bulk update images' });
   }
 });
 
@@ -317,11 +355,11 @@ router.delete('/:id', async (req, res) => {
       where: { id },
     });
 
-    res.json({ message: 'Image deleted successfully' });
+    return res.json({ message: 'Image deleted successfully' });
 
   } catch (error) {
     console.error('Error deleting image:', error);
-    res.status(500).json({ error: 'Failed to delete image' });
+    return res.status(500).json({ error: 'Failed to delete image' });
   }
 });
 
@@ -330,14 +368,14 @@ router.delete('/', async (req, res) => {
   try {
     const result = await prisma.image.deleteMany({});
 
-    res.json({ 
+    return res.json({ 
       message: `Successfully deleted ${result.count} images`,
       count: result.count 
     });
 
   } catch (error) {
     console.error('Error deleting all images:', error);
-    res.status(500).json({ error: 'Failed to delete images' });
+    return res.status(500).json({ error: 'Failed to delete images' });
   }
 });
 
@@ -364,11 +402,28 @@ router.post('/:id/rerun-gemini', async (req, res) => {
     // Kick off background processing (no await)
     processGeminiForImage(id).catch(console.error);
 
-    res.status(202).json({ message: 'Gemini reprocessing started' });
+    return res.status(202).json({ message: 'Gemini reprocessing started' });
 
   } catch (error) {
     console.error('Error triggering Gemini reprocess:', error);
-    res.status(500).json({ error: 'Failed to start Gemini reprocess' });
+    return res.status(500).json({ error: 'Failed to start Gemini reprocess' });
+  }
+});
+
+// POST /api/images/run-group-inference - Manually trigger group inference
+router.post('/run-group-inference', async (req, res) => {
+  try {
+    const { runGroupInference } = await import('../services/groupInference');
+    await runGroupInference();
+    
+    return res.json({ 
+      message: 'Group inference completed successfully',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error running group inference:', error);
+    return res.status(500).json({ error: 'Failed to run group inference' });
   }
 });
 

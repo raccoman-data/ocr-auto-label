@@ -1,12 +1,11 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useImageStore } from '@/stores/imageStore';
 import { formatFileSize, formatTimestamp, cn } from '@/lib/utils';
-import { StatusIcons } from '@/components/ImageTable/StatusIcons';
+import { StatusDisplay } from '@/components/ImageTable/StatusDisplay';
 import { GroupEditor } from '@/components/GroupEditor';
 import { InlineNameEditor } from '@/components/InlineNameEditor';
-import { Button } from '@/components/ui/button';
-import { RefreshCw, Copy, Check } from 'lucide-react';
-import { ValidationDetails } from '@/components/ui/ValidationIcon';
+import { Copy, Check } from 'lucide-react';
+
 
 export function Sidebar() {
   const { selectedImage, images, updateImage } = useImageStore();
@@ -235,6 +234,7 @@ export function Sidebar() {
                 currentName={selectedImage.newName || selectedImage.code || ''}
                 placeholder={selectedImage.code || 'Unnamed'}
                 originalName={selectedImage.originalName}
+                imageId={selectedImage.id}
                 onSave={handleNameUpdate}
                 variant="sidebar"
                 className="w-full"
@@ -306,12 +306,7 @@ export function Sidebar() {
               </div>
             </div>
             
-            {/* Code Validation Details */}
-            {selectedImage.code && (
-              <div className="mt-2">
-                <ValidationDetails code={selectedImage.code} />
-              </div>
-            )}
+
           </div>
 
           <div>
@@ -333,13 +328,13 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Color Palette - smaller and more compact */}
+        {/* Object Colors (from Gemini) */}
         <div>
-          <label className="text-xs font-semibold text-foreground mb-2 block">Color Palette</label>
-          {selectedImage.palette && Array.isArray(selectedImage.palette) && selectedImage.palette.length > 0 ? (
+          <label className="text-xs font-semibold text-foreground mb-2 block">Object Colors</label>
+          {selectedImage.objectColors && Array.isArray(selectedImage.objectColors) && selectedImage.objectColors.length > 0 ? (
             <div className="flex gap-1">
-              {selectedImage.palette.map((color, index) => {
-                const tooltipText = `${color.name || 'Color'}: ${color.color} (${color.percentage || 0}%)`;
+              {selectedImage.objectColors.map((color, index) => {
+                const tooltipText = `${color.name}: ${color.color}`;
                 return (
                   <div
                     key={index}
@@ -352,63 +347,26 @@ export function Sidebar() {
             </div>
           ) : (
             <div className="p-3 bg-muted/50 rounded text-xs border text-center">
-              {selectedImage.paletteStatus === 'pending' && (
-                <span className="italic text-muted-foreground">⏳ Extracting colors...</span>
+              {selectedImage.geminiStatus === 'pending' && (
+                <span className="italic text-muted-foreground">⏳ Analyzing object colors...</span>
               )}
-              {selectedImage.paletteStatus === 'processing' && (
-                <span className="italic text-muted-foreground">🎨 Processing palette...</span>
+              {selectedImage.geminiStatus === 'processing' && (
+                <span className="italic text-muted-foreground">🎨 AI detecting colors...</span>
               )}
-              {selectedImage.paletteStatus === 'error' && (
-                <span className="italic text-muted-foreground">❌ Failed to extract colors</span>
+              {selectedImage.geminiStatus === 'error' && (
+                <span className="italic text-muted-foreground">❌ Failed to detect colors</span>
               )}
-              {selectedImage.paletteStatus === 'complete' && (
+              {selectedImage.geminiStatus === 'complete' && (
                 <span className="italic text-muted-foreground">🎨 No colors detected</span>
               )}
             </div>
           )}
         </div>
 
-        {/* Processing Status with icons - moved to bottom */}
+        {/* Processing Status */}
         <div>
           <label className="text-xs font-semibold text-foreground mb-2 block">Status</label>
-          <div className="flex items-center">
-            <StatusIcons
-              paletteStatus={selectedImage.paletteStatus}
-              geminiStatus={selectedImage.geminiStatus}
-              groupingStatus={selectedImage.groupingStatus}
-              paletteConfidence={selectedImage.paletteConfidence}
-              geminiConfidence={selectedImage.geminiConfidence}
-              groupingConfidence={selectedImage.groupingConfidence}
-              hasCode={!!selectedImage.code}
-              code={selectedImage.code}
-            />
-          </div>
-          {/* Retry Gemini button */}
-          <div className="mt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs gap-1"
-              disabled={selectedImage.geminiStatus === 'processing'}
-              onClick={async () => {
-                try {
-                  // Optimistic UI update
-                  updateImage(selectedImage.id, { geminiStatus: 'processing', geminiConfidence: 0 });
-
-                  const res = await fetch(`/api/images/${selectedImage.id}/rerun-gemini`, {
-                    method: 'POST'
-                  });
-                  if (!res.ok) throw new Error('Failed to trigger Gemini');
-                } catch (err) {
-                  console.error(err);
-                  // revert
-                  updateImage(selectedImage.id, { geminiStatus: 'error' });
-                }
-              }}
-            >
-              <RefreshCw className="w-3 h-3" /> Retry Gemini
-            </Button>
-          </div>
+          <StatusDisplay status={selectedImage.status} />
         </div>
       </div>
     </div>
