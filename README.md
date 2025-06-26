@@ -19,7 +19,7 @@ I built this app specifically for the team at [leadresearch.org](https://leadres
 4. **Quick review interface** lets you fix any mistakes with Excel-like keyboard shortcuts
 5. **Export** your perfectly organized collection
 
-**Real results from leadresearch.org:** 2,000 photos processed in ~8 minutes, 85%+ accuracy, $0.15 in AI costs. Their research team went from spending entire days on file organization to getting back to actual science.
+**Real results from leadresearch.org:** 2,000 photos processed in ~8 minutes, 85%+ accuracy, ~$0.70 in AI costs. Their research team went from spending entire days on file organization to getting back to actual science.
 
 ---
 
@@ -178,16 +178,36 @@ npm install --global windows-build-tools
 
 ## 💰 Cost Information
 
-### Google AI Usage
-- **Cost:** ~$0.00015 per photo
-- **2,000 photos:** ~$0.30 total
-- **Free tier:** $300 credit for new Google Cloud users
-- **Billing:** Only charged for photos actually processed
+### Actual Google AI Usage & Costs
+Based on analysis of the app's implementation with Gemini 2.0 Flash:
+
+**Per Photo Breakdown:**
+- **Input tokens:** ~2,790 tokens (1,290 for image + 1,500 for comprehensive prompt)
+- **Output tokens:** ~175 tokens (structured JSON response with code, colors, description)
+- **Cost per photo:** ~$0.349 per 1,000 photos = **$0.000349 per photo**
+
+**Real-World Cost Examples:**
+- **100 photos:** ~$0.035 (3.5 cents)
+- **500 photos:** ~$0.175 (17.5 cents)
+- **1,000 photos:** ~$0.35 (35 cents)
+- **2,000 photos:** ~$0.70 (70 cents)
+- **5,000 photos:** ~$1.75
+
+**Why It's So Affordable:**
+- Uses efficient **Gemini 2.0 Flash** (not the more expensive Pro model)
+- Only processes each photo **once** - no retries unless you specifically request them
+- Optimized prompt design minimizes token usage while maintaining accuracy
+
+### Free Tier Benefits
+- **$300 Google Cloud credit** for new users covers ~860,000 photos
+- **No hidden costs** - only pay for successful AI processing
+- **Transparent billing** - see exact usage in Google Cloud Console
 
 ### No Hidden Costs
-- **App is free** - open source and no subscription
-- **Runs locally** - no cloud storage fees
+- **App is free** - open source, no subscription fees
+- **Runs locally** - no cloud storage or hosting fees
 - **One-time setup** - no recurring payments
+- **Only pay Google** for AI processing (and only when you use it)
 
 ---
 
