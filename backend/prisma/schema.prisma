@@ -11,11 +11,12 @@ datasource db {
 }
 
 model Image {
-  id           String   @id @default(cuid())
-  originalName String
-  newName      String?
-  filePath     String   // Path to original file
-  thumbnailPath String? // Path to generated thumbnail
+  id              String    @id @default(cuid())
+  originalName    String
+  newName         String?
+  filePath        String    // Path to the processed (e.g., JPEG frame) file
+  originalFilePath String?  // Add this line - Path to the original MP.JPG
+  thumbnailPath   String?
   fileSize     Int
   timestamp    DateTime // Original file timestamp
   group        String?

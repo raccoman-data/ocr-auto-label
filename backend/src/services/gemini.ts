@@ -75,77 +75,92 @@ export async function extractTextFromImage(imagePath: string): Promise<GeminiRes
       }
     });
 
-    // Prepare the prompt for OCR extraction
-    const prompt = `You are reading handwritten sample codes on laboratory labels. These codes are CRITICAL for research - accuracy is paramount.
+//     // Prepare the prompt for OCR extraction
+//     const prompt = `You are reading handwritten sample codes on laboratory labels. These codes are CRITICAL for research - accuracy is paramount.
 
-SAMPLE CODE PATTERNS (must match exactly):
-${generateGeminiPromptPatterns()}
+// SAMPLE CODE PATTERNS (must match exactly):
+// ${generateGeminiPromptPatterns()}
 
-CRITICAL READING RULES:
-- Each segment is separated by a PERIOD (.)
-- Count periods carefully - they separate distinct values
-- When you see consecutive numbers, check if there's a period between them
-- For letter+number combinations (like "1A"), the letter comes AFTER the number
-- COMMON ERROR: "11A" should be read as "1.1A" (check for missing period)
-- If a number seems too large for its position, look for a missed period
+// CRITICAL READING RULES:
+// - Each segment is separated by a PERIOD (.)
+// - Count periods carefully - they separate distinct values
+// - When you see consecutive numbers, check if there's a period between them
+// - For letter+number combinations (like "1A"), the letter comes AFTER the number
+// - COMMON ERROR: "11A" should be read as "1.1A" (check for missing period)
+// - If a number seems too large for its position, look for a missed period
 
-🚨 CRITICAL D/0 CONFUSION RULE 🚨:
-- In MWI.1 codes, position 5 MUST be [number][letter]: like "1A", "2B", "7D", etc.
-- If you see what looks like "10" in position 5, it's probably "1D" (letter D, not zero) - similarly B gets mistaken for 8
-- The pattern REQUIRES a letter A-D after the number in position 5
-- "10" alone is INVALID - position 5 needs format like "1D", "2A", "3B", etc.
-- ALWAYS double-check: does the "0" look like it could be a "D"?
-- Remember: D's are often mistaken for 0s in handwriting and B's are often mistaken for 8's.
+// 🚨 CRITICAL D/0 CONFUSION RULE 🚨:
+// - In MWI.1 codes, position 5 MUST be [number][letter]: like "1A", "2B", "7D", etc.
+// - If you see what looks like "10" in position 5, it's probably "1D" (letter D, not zero) - similarly B gets mistaken for 8
+// - The pattern REQUIRES a letter A-D after the number in position 5
+// - "10" alone is INVALID - position 5 needs format like "1D", "2A", "3B", etc.
+// - ALWAYS double-check: does the "0" look like it could be a "D"?
+// - Remember: D's are often mistaken for 0s in handwriting and B's are often mistaken for 8's.
 
-VALIDATION PROCESS:
-1. Read the code character by character
-2. Check if your reading matches one of the three patterns exactly
-3. If ANY segment violates the range constraints, re-examine for missed periods
-4. Pay special attention to numbers > 10 in positions that only allow 1-10
+// VALIDATION PROCESS:
+// 1. Read the code character by character
+// 2. Check if your reading matches one of the three patterns exactly
+// 3. If ANY segment violates the range constraints, re-examine for missed periods
+// 4. Pay special attention to numbers > 10 in positions that only allow 1-10
 
-SPECIFIC CONSTRAINTS TO CHECK:
-- Position 4 in MWI.1.X.X.[1-10][A-D].X.X: Numbers 11+ are IMPOSSIBLE
-- If you read "11A", "12B", etc. in this position, you MISSED a period
-- The correct reading is likely "1.1A", "1.2B", etc.
-- Position 5 in MWI.1.X.X.X.[1-10][A-D].X.X: MUST have format [number][letter]
-- If you read "10" in position 5, re-examine - it should be "1D" (D not 0)
-- If you read "20", "30", etc. in position 5, look for the missing letter (probably D or B)
-- Numbers 11+ alone in position 5 are IMPOSSIBLE - check for missed periods
-- Position 5 examples: "1A", "2B", "7D", "10A" - never just "10"
+// SPECIFIC CONSTRAINTS TO CHECK:
+// - Position 4 in MWI.1.X.X.[1-10][A-D].X.X: Numbers 11+ are IMPOSSIBLE
+// - If you read "11A", "12B", etc. in this position, you MISSED a period
+// - The correct reading is likely "1.1A", "1.2B", etc.
+// - Position 5 in MWI.1.X.X.X.[1-10][A-D].X.X: MUST have format [number][letter]
+// - If you read "10" in position 5, re-examine - it should be "1D" (D not 0)
+// - If you read "20", "30", etc. in position 5, look for the missing letter (probably D or B)
+// - Numbers 11+ alone in position 5 are IMPOSSIBLE - check for missed periods
+// - Position 5 examples: "1A", "2B", "7D", "10A" - never just "10"
 
-SELF-VALIDATION CHECKLIST:
-- Does the code start with "MWI" or "KEN"? 
-- Are there exactly 5 or 6 periods?
-- Does each numeric segment fall within the specified ranges?
-- Are letters only A-D and only after numbers in allowed positions?
-- If ANY constraint fails, re-examine the handwriting for missed periods
+// SELF-VALIDATION CHECKLIST:
+// - Does the code start with "MWI" or "KEN"? 
+// - Are there exactly 5 or 6 periods?
+// - Does each numeric segment fall within the specified ranges?
+// - Are letters only A-D and only after numbers in allowed positions?
+// - If ANY constraint fails, re-examine the handwriting for missed periods
 
-READ CHARACTER BY CHARACTER, validate against patterns, and self-correct if needed.
+// READ CHARACTER BY CHARACTER, validate against patterns, and self-correct if needed.
 
-Additionally, analyze the PRIMARY OBJECT (not background) and extract its top 3 most prominent colors.
+// Additionally, analyze the PRIMARY OBJECT (not background) and extract its top 3 most prominent colors.
 
+// Respond only with JSON:
+// {
+//   "code": "MWI… or KEN… sample code if found, otherwise NA",
+//   "codeConfidence": 0.85,
+//   "otherText": "Any other text visible in the image, otherwise NA", 
+//   "objectDesc": "Describe the main object in 3 words or less, otherwise NA",
+//   "objectColors": [
+//     {"color": "#RRGGBB", "name": "descriptive color name"},
+//     {"color": "#RRGGBB", "name": "descriptive color name"},
+//     {"color": "#RRGGBB", "name": "descriptive color name"}
+//   ]
+// We }
+
+// CONFIDENCE SCORING for "codeConfidence" (0.0 to 1.0):
+// - 0.9-1.0: Crystal clear, perfectly legible handwriting, all segments clearly visible
+// - 0.7-0.9: Clear handwriting with the full code visible with minor ambiguity in 1-2 characters
+// - 0.5-0.7: Readable but some characters are unclear or smudged, full code may not be visible
+// - 0.3-0.5: Difficult to read, multiple characters uncertain
+// - 0.1-0.3: Very poor quality, mostly guessing
+// - 0.0: No code visible or completely illegible
+
+// Set codeConfidence to 0.0 if code is "NA".`;
+    const prompt = `You are analysing images from a field study. Everyday objects were tested and photographed along with an ID written on masking tape. I want you to several fields, including the ID and details about the object.
+The ID is in the form "[a-zA-Z]{3}.[0-9].[0-9].[0-9].[0-9]+[A-Z]*.[0-9]+[A-Z]*.[0-9]+". Focus on the full stops as these are key to deciphering it. Be aware that the letters after numbers are sequential so unlikely to see later letters. If something is falling far outside this range beware of common mix-ups eg "I" is actually "1".
+For the colours, try to focus on the primary object itself, not the background, label, etc.
+The letters at the start will be "KEN" or "MWI".
 Respond only with JSON:
 {
-  "code": "MWI… or KEN… sample code if found, otherwise NA",
-  "codeConfidence": 0.85,
-  "otherText": "Any other text visible in the image, otherwise NA", 
-  "objectDesc": "Describe the main object in 3 words or less, otherwise NA",
-  "objectColors": [
-    {"color": "#RRGGBB", "name": "descriptive color name"},
-    {"color": "#RRGGBB", "name": "descriptive color name"},
-    {"color": "#RRGGBB", "name": "descriptive color name"}
-  ]
-We }
-
-CONFIDENCE SCORING for "codeConfidence" (0.0 to 1.0):
-- 0.9-1.0: Crystal clear, perfectly legible handwriting, all segments clearly visible
-- 0.7-0.9: Clear handwriting with the full code visible with minor ambiguity in 1-2 characters
-- 0.5-0.7: Readable but some characters are unclear or smudged, full code may not be visible
-- 0.3-0.5: Difficult to read, multiple characters uncertain
-- 0.1-0.3: Very poor quality, mostly guessing
-- 0.0: No code visible or completely illegible
-
-Set codeConfidence to 0.0 if code is "NA".`;
+"code": "MWI… or KEN… sample code if found, otherwise NA",
+"codeConfidence": 0.85,
+"otherText": "Any other text visible in the image, otherwise NA",
+"objectDesc": "Describe the main object in 3 words or less, otherwise NA",
+"objectColors": [
+{"color": "#RRGGBB", "name": "descriptive color name"},
+{"color": "#RRGGBB", "name": "descriptive color name"},
+{"color": "#RRGGBB", "name": "descriptive color name"}
+]}`;
 
     // Convert image to base64 for Gemini API
     const imageBase64 = imageBuffer.toString('base64');

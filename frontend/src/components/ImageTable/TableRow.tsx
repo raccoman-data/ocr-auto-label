@@ -125,8 +125,11 @@ export function TableRow({
   };
 
   // Use thumbnail for table (performance), full image for sidebar
+  // const thumbnailUrl = image.thumbnailPath 
+  //   ? `/thumbnails/${image.thumbnailPath.split('/').pop()}` 
+  //   : null;
   const thumbnailUrl = image.thumbnailPath 
-    ? `/thumbnails/${image.thumbnailPath.split('/').pop()}` 
+    ? `/thumbnails/${image.thumbnailPath.replace(/\\/g, '/').split('/').pop()}` 
     : null;
 
   // Format timestamp for display - clean MM-DD-YY format without timezone

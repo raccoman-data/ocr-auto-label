@@ -175,8 +175,10 @@ export function Sidebar() {
   };
 
   // Try raw image first for maximum quality, fallback to thumbnail
+  // const rawImageUrl = selectedImage.filePath ? 
+  //   `/raw/${selectedImage.filePath.split('/').pop()}` : null;
   const rawImageUrl = selectedImage.filePath ? 
-    `/raw/${selectedImage.filePath.split('/').pop()}` : null;
+    `/raw/${selectedImage.filePath.replace(/\\/g, '/').split('/').pop()}` : null;
   const thumbnailUrl = selectedImage.thumbnailPath || null;
   const imageUrl = rawImageUrl || thumbnailUrl;
 

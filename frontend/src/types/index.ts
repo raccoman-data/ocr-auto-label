@@ -14,8 +14,8 @@ export interface Image {
   groupingStatus: 'pending' | 'processing' | 'complete' | 'error';
   
   // Overall comprehensive status
-  status: 'pending' | 'extracting' | 'extracted' | 'invalid_group' | 'pending_grouping' | 'grouping' | 'auto_grouped' | 'ungrouped' | 'user_grouped';
-  
+  // status: 'pending' | 'extracting' | 'extracted' | 'invalid_group' | 'pending_grouping' | 'grouping' | 'auto_grouped' | 'ungrouped' | 'user_grouped';
+  status: 'pending' | 'extracting' | 'extracted' | 'invalid_group' | 'pending_grouping' | 'grouping' | 'auto_grouped' | 'ungrouped' | 'user_grouped' | 'api_error';
   // Extracted data
   code?: string;
   otherText?: string;

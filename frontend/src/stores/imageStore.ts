@@ -5,7 +5,8 @@ import { getImages } from '@/lib/api';
 import { getValidationStatus } from '@/lib/validation';
 
 // Sorting types
-type SortField = 'timestamp' | 'originalName' | 'newName' | 'group';
+// type SortField = 'timestamp' | 'originalName' | 'newName' | 'group';
+type SortField = 'timestamp' | 'originalName' | 'newName' | 'group' | 'status';
 type SortOrder = 'asc' | 'desc';
 
 interface SortState {
@@ -297,6 +298,10 @@ export const useImageStore = create<ImageStore>()(
             case 'group':
               aValue = (a.group || '').toLowerCase();
               bValue = (b.group || '').toLowerCase();
+              break;
+            case 'status': // Add this new case
+              aValue = (a.status || '').toLowerCase();
+              bValue = (b.status || '').toLowerCase();
               break;
             default:
               return 0;

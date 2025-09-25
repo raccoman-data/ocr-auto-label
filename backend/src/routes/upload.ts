@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import mime from 'mime-types';
 import ExifReader from 'exifreader';
 import { prisma } from '../index';
+import heicConvert from 'heic-convert';
 
 import { extractTextFromImage, isValidSampleCode } from '../services/gemini';
 import { getExtractionEstimate, extractImagesFromZipFile } from '../services/zipExtractor';
@@ -113,104 +114,322 @@ async function generateThumbnail(buffer: Buffer, filename: string): Promise<stri
 }
 
 // Save file only (fast upload without processing)
+// async function saveFileOnly(file: Express.Multer.File, originalName?: string, originalTimestamp?: number): Promise<any> {
+//   const fileExtension = mime.extension(file.mimetype) || 'jpg';
+//   const uniqueFilename = `${uuidv4()}.${fileExtension}`;
+//   const filePath = path.join(UPLOADS_DIR, uniqueFilename);
+
+//   // Save original file first
+//   await fs.writeFile(filePath, file.buffer);
+
+//   // Get the actual file creation date
+//   let captureDate = new Date(); // fallback to current time
+
+// async function saveFileOnly(file: Express.Multer.File, originalName?: string, originalTimestamp?: number): Promise<any> {
+//   let fileBuffer = file.buffer;
+//   let fileExtension = mime.extension(file.mimetype) || 'jpg';
+
+//   // If the uploaded file is HEIC/HEIF, convert it to JPEG immediately
+//   if (['image/heic', 'image/heif'].includes(file.mimetype)) {
+//     console.log(`📸 Converting HEIC file to JPEG: ${originalName || file.originalname}`);
+//     try {
+//       fileBuffer = await sharp(file.buffer)
+//         .jpeg({ quality: 90, progressive: true })
+//         .toBuffer();
+//       fileExtension = 'jpeg'; // The new file is now a JPEG
+//     } catch (error) {
+//       console.error(`❌ Failed to convert HEIC file ${originalName || file.originalname}:`, error);
+//       // Skip this file if conversion fails
+//       return null;
+//     }
+//   }
+
+//   const uniqueFilename = `${uuidv4()}.${fileExtension}`;
+//   const filePath = path.join(UPLOADS_DIR, uniqueFilename);
+
+//   // Save the (potentially converted) file
+//   await fs.writeFile(filePath, fileBuffer);
+
+//   // Get the actual file creation date
+//   let captureDate = new Date(); // fallback to current time
+
+//   let dateSource = 'fallback';
+  
+//   try {
+//     // First try to use the original timestamp from the browser (File.lastModified)
+//     if (originalTimestamp && originalTimestamp > 0) {
+//       captureDate = new Date(originalTimestamp);
+//       dateSource = 'browser_lastModified';
+//       console.log(`📅 Using browser original timestamp: ${captureDate.toISOString()}`);
+//     } else {
+//       // Fallback to file system metadata
+//       const stats = await fs.stat(filePath);
+      
+//       if (stats.birthtime && stats.birthtime.getTime() > 0) {
+//         captureDate = stats.birthtime;
+//         dateSource = 'file_birthtime';
+//         console.log(`📅 Using file creation time: ${captureDate.toISOString()}`);
+//       } else if (stats.mtime) {
+//         captureDate = stats.mtime;
+//         dateSource = 'file_mtime';
+//         console.log(`📅 Using file modification time: ${captureDate.toISOString()}`);
+//       }
+//     }
+    
+//     // Also try EXIF as secondary source for camera photos
+//     try {
+//       const tags = ExifReader.load(file.buffer);
+      
+//       const dateFields = ['DateTimeOriginal', 'DateTime', 'DateTimeDigitized', 'CreateDate'];
+      
+//       for (const field of dateFields) {
+//         if (tags[field] && tags[field].description) {
+//           const dateString = tags[field].description;
+//           const standardDateString = dateString.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
+//           const exifDate = new Date(standardDateString);
+          
+//           const now = new Date();
+//           const minDate = new Date('1990-01-01');
+          
+//           if (!isNaN(exifDate.getTime()) && exifDate <= now && exifDate >= minDate) {
+//             // Only use EXIF date if it's significantly different from current date (more than 1 hour)
+//             const timeDiff = Math.abs(exifDate.getTime() - captureDate.getTime());
+//             if (timeDiff > 3600000) { // 1 hour in milliseconds
+//               captureDate = exifDate;
+//               dateSource = `exif_${field}`;
+//               console.log(`📅 Using EXIF ${field} instead: ${captureDate.toISOString()}`);
+//             }
+//             break;
+//           }
+//         }
+//       }
+//     } catch (exifError) {
+//       // EXIF parsing failed, but we already have a date
+//       console.log(`⚠️ EXIF parsing failed, using ${dateSource} date`);
+//     }
+    
+//     console.log(`📅 Final capture date for ${originalName || file.originalname}: ${captureDate.toISOString()} (source: ${dateSource})`);
+    
+//   } catch (error) {
+//     console.warn(`⚠️ Could not extract date for ${originalName || file.originalname}:`, error);
+//     console.log(`📅 Using fallback date: ${captureDate.toISOString()}`);
+//   }
+
+//   // Create thumbnail quickly
+//   // const thumbnailFilename = `thumb_${uniqueFilename}`;
+//   // const thumbnailPath = path.join(THUMBNAILS_DIR, thumbnailFilename);
+
+//   // try {
+//   //   await sharp(file.buffer)
+//   //     .resize(400, 400, { 
+//   //       fit: 'inside',
+//   //       withoutEnlargement: true 
+//   //     })
+//   //     .jpeg({ quality: 95 })
+//   //     .toFile(thumbnailPath);
+//   // } catch (error) {
+//   //   console.error(`Failed to create thumbnail for ${file.originalname}:`, error);
+//   // }
+
+//   // // Save to database with pending Gemini status
+//   // const image = await prisma.image.create({
+//   //   data: {
+//   //     originalName: originalName || file.originalname,
+//   //     newName: '', // Will be set later during processing
+//   //     filePath: filePath,
+//   //     thumbnailPath: thumbnailPath,
+//   //     fileSize: file.size,
+//   //     timestamp: captureDate,
+//   //     group: '', // Will be set later during processing
+//   //     geminiStatus: 'pending',
+//   //     code: null,
+//   //     otherText: null,
+//   //     objectDesc: null,
+//   //     objectColors: null,
+//   //     geminiConfidence: 0,
+//   //     groupingStatus: 'pending',
+//   //     groupingConfidence: 0,
+//   //   },
+//   // });
+
+//   // Create thumbnail from the (potentially converted) buffer
+//   const thumbnailFilename = `thumb_${uniqueFilename}`;
+//   const thumbnailPath = path.join(THUMBNAILS_DIR, thumbnailFilename);
+
+//   try {
+//     await sharp(fileBuffer) // Use fileBuffer here
+//       .resize(400, 400, { 
+//         fit: 'inside',
+//         withoutEnlargement: true 
+//       })
+//       .jpeg({ quality: 95 })
+//       .toFile(thumbnailPath);
+//   } catch (error) {
+//     console.error(`Failed to create thumbnail for ${file.originalname}:`, error);
+//   }
+
+//   // Save to database with pending Gemini status
+//   const image = await prisma.image.create({
+//     data: {
+//       originalName: originalName || file.originalname,
+//       newName: '',
+//       filePath: filePath,
+//       thumbnailPath: thumbnailPath,
+//       fileSize: fileBuffer.length, // Use the new buffer's length
+//       timestamp: captureDate,
+//       group: '',
+//       geminiStatus: 'pending',
+//       code: null,
+//       otherText: null,
+//       objectDesc: null,
+//       objectColors: null,
+//       geminiConfidence: 0,
+//       groupingStatus: 'pending',
+//       groupingConfidence: 0,
+//     },
+//   });
+
+//   return {
+//     id: image.id,
+//     originalName: image.originalName,
+//     newName: image.newName,
+//     group: image.group,
+//     filePath: image.filePath,
+//     thumbnailPath: image.thumbnailPath,
+//     fileSize: image.fileSize,
+//     timestamp: image.timestamp,
+//     geminiStatus: image.geminiStatus,
+//     code: image.code,
+//     otherText: image.otherText,
+//     objectDesc: image.objectDesc,
+//     objectColors: image.objectColors,
+//     geminiConfidence: image.geminiConfidence,
+//     groupingStatus: image.groupingStatus,
+//     groupingConfidence: image.groupingConfidence,
+//     createdAt: image.createdAt,
+//     updatedAt: image.updatedAt,
+//   };
+// }
+
+// async function saveFileOnly(file: Express.Multer.File, originalName?: string, originalTimestamp?: number): Promise<any> {
+//   let fileBuffer = file.buffer;
+//   let fileExtension = mime.extension(file.mimetype) || 'jpg';
+//   let effectiveMimeType = file.mimetype;
+
+//   // If the uploaded file is HEIC/HEIF, convert it to JPEG immediately
+//   if (['image/heic', 'image/heif'].includes(file.mimetype)) {
+//     console.log(`📸 Converting HEIC file to JPEG: ${originalName || file.originalname}`);
+//     try {
+//       fileBuffer = await heicConvert({
+//         buffer: file.buffer, // The HEIC file buffer
+//         format: 'JPEG',      // Convert to JPEG
+//         quality: 0.9         // Adjust quality (0 to 1)
+//       });
+//       fileExtension = 'jpeg';
+//       effectiveMimeType = 'image/jpeg';
+//     } catch (error) {
+//       console.error(`❌ Failed to convert HEIC file ${originalName || file.originalname}:`, error);
+//       return null; // Skip this file if conversion fails
+//     }
+//   }
+
+//   const uniqueFilename = `${uuidv4()}.${fileExtension}`;
+//   const filePath = path.join(UPLOADS_DIR, uniqueFilename);
+
+//   await fs.writeFile(filePath, fileBuffer);
 async function saveFileOnly(file: Express.Multer.File, originalName?: string, originalTimestamp?: number): Promise<any> {
-  const fileExtension = mime.extension(file.mimetype) || 'jpg';
+  let fileBuffer = file.buffer;
+  let fileExtension = mime.extension(file.mimetype) || 'jpg';
+  let effectiveOriginalName = originalName || file.originalname;
+  let originalFilePath: string | null = null;
+
   const uniqueFilename = `${uuidv4()}.${fileExtension}`;
   const filePath = path.join(UPLOADS_DIR, uniqueFilename);
 
-  // Save original file first
-  await fs.writeFile(filePath, file.buffer);
+  // Save the original file first, especially if it's an MP.JPG
+  if (effectiveOriginalName.toUpperCase().endsWith('.MP.JPG')) {
+    originalFilePath = filePath; // This path will store the original MP.JPG
+    await fs.writeFile(originalFilePath, file.buffer);
 
-  // Get the actual file creation date
-  let captureDate = new Date(); // fallback to current time
+    // Now, extract the first frame for processing
+    console.log(`📸 Extracting first frame from .MP.JPG file: ${effectiveOriginalName}`);
+    try {
+      fileBuffer = await sharp(file.buffer, { page: 0 })
+        .jpeg({ quality: 90, progressive: true })
+        .toBuffer();
+      fileExtension = 'jpeg';
+    } catch (error) {
+      console.error(`❌ Failed to extract frame from .MP.JPG file ${effectiveOriginalName}:`, error);
+      return null;
+    }
+  }
+
+  // For non-MP.JPG files, or for the extracted frame, save to the main filePath
+  const processableFilePath = originalFilePath ? path.join(UPLOADS_DIR, `${uuidv4()}_frame.jpeg`) : filePath;
+  await fs.writeFile(processableFilePath, fileBuffer);
+
+  let captureDate = new Date();
   let dateSource = 'fallback';
-  
+
   try {
-    // First try to use the original timestamp from the browser (File.lastModified)
     if (originalTimestamp && originalTimestamp > 0) {
       captureDate = new Date(originalTimestamp);
       dateSource = 'browser_lastModified';
-      console.log(`📅 Using browser original timestamp: ${captureDate.toISOString()}`);
     } else {
-      // Fallback to file system metadata
       const stats = await fs.stat(filePath);
-      
       if (stats.birthtime && stats.birthtime.getTime() > 0) {
         captureDate = stats.birthtime;
         dateSource = 'file_birthtime';
-        console.log(`📅 Using file creation time: ${captureDate.toISOString()}`);
       } else if (stats.mtime) {
         captureDate = stats.mtime;
         dateSource = 'file_mtime';
-        console.log(`📅 Using file modification time: ${captureDate.toISOString()}`);
       }
     }
-    
-    // Also try EXIF as secondary source for camera photos
+
     try {
-      const tags = ExifReader.load(file.buffer);
-      
+      const tags = ExifReader.load(fileBuffer);
       const dateFields = ['DateTimeOriginal', 'DateTime', 'DateTimeDigitized', 'CreateDate'];
-      
       for (const field of dateFields) {
         if (tags[field] && tags[field].description) {
           const dateString = tags[field].description;
           const standardDateString = dateString.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3');
           const exifDate = new Date(standardDateString);
-          
-          const now = new Date();
-          const minDate = new Date('1990-01-01');
-          
-          if (!isNaN(exifDate.getTime()) && exifDate <= now && exifDate >= minDate) {
-            // Only use EXIF date if it's significantly different from current date (more than 1 hour)
-            const timeDiff = Math.abs(exifDate.getTime() - captureDate.getTime());
-            if (timeDiff > 3600000) { // 1 hour in milliseconds
-              captureDate = exifDate;
-              dateSource = `exif_${field}`;
-              console.log(`📅 Using EXIF ${field} instead: ${captureDate.toISOString()}`);
-            }
+
+          if (!isNaN(exifDate.getTime()) && Math.abs(exifDate.getTime() - captureDate.getTime()) > 3600000) {
+            captureDate = exifDate;
+            dateSource = `exif_${field}`;
             break;
           }
         }
       }
     } catch (exifError) {
-      // EXIF parsing failed, but we already have a date
       console.log(`⚠️ EXIF parsing failed, using ${dateSource} date`);
     }
-    
+
     console.log(`📅 Final capture date for ${originalName || file.originalname}: ${captureDate.toISOString()} (source: ${dateSource})`);
-    
+
   } catch (error) {
     console.warn(`⚠️ Could not extract date for ${originalName || file.originalname}:`, error);
-    console.log(`📅 Using fallback date: ${captureDate.toISOString()}`);
   }
 
-  // Create thumbnail quickly
-  const thumbnailFilename = `thumb_${uniqueFilename}`;
+ // Create thumbnail from the processed frame/image
+  const thumbnailFilename = `thumb_${path.basename(processableFilePath, path.extname(processableFilePath))}.jpeg`;
   const thumbnailPath = path.join(THUMBNAILS_DIR, thumbnailFilename);
+  await sharp(fileBuffer)
+    .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 95 })
+    .toFile(thumbnailPath);
 
-  try {
-    await sharp(file.buffer)
-      .resize(400, 400, { 
-        fit: 'inside',
-        withoutEnlargement: true 
-      })
-      .jpeg({ quality: 95 })
-      .toFile(thumbnailPath);
-  } catch (error) {
-    console.error(`Failed to create thumbnail for ${file.originalname}:`, error);
-  }
-
-  // Save to database with pending Gemini status
   const image = await prisma.image.create({
     data: {
-      originalName: originalName || file.originalname,
-      newName: '', // Will be set later during processing
-      filePath: filePath,
+      originalName: effectiveOriginalName,
+      newName: '',
+      filePath: processableFilePath, // This is the path to the JPEG frame
+      originalFilePath: originalFilePath, // This is the path to the original MP.JPG
       thumbnailPath: thumbnailPath,
-      fileSize: file.size,
+      fileSize: file.size, // Store the original file size
       timestamp: captureDate,
-      group: '', // Will be set later during processing
+      group: '',
       geminiStatus: 'pending',
       code: null,
       otherText: null,
@@ -222,26 +441,7 @@ async function saveFileOnly(file: Express.Multer.File, originalName?: string, or
     },
   });
 
-  return {
-    id: image.id,
-    originalName: image.originalName,
-    newName: image.newName,
-    group: image.group,
-    filePath: image.filePath,
-    thumbnailPath: image.thumbnailPath,
-    fileSize: image.fileSize,
-    timestamp: image.timestamp,
-    geminiStatus: image.geminiStatus,
-    code: image.code,
-    otherText: image.otherText,
-    objectDesc: image.objectDesc,
-    objectColors: image.objectColors,
-    geminiConfidence: image.geminiConfidence,
-    groupingStatus: image.groupingStatus,
-    groupingConfidence: image.groupingConfidence,
-    createdAt: image.createdAt,
-    updatedAt: image.updatedAt,
-  };
+  return image;
 }
 
 // POST /api/upload - Handle multiple file uploads (fast upload, no processing)
@@ -267,7 +467,9 @@ router.post('/', upload.array('files'), async (req, res) => {
       saveFileOnly(file, undefined, originalTimestamps[index])
     );
 
-    const uploadedImages = await Promise.all(uploadPromises);
+    // const uploadedImages = await Promise.all(uploadPromises);
+    const results = await Promise.all(uploadPromises);
+    const uploadedImages = results.filter(img => img !== null); // Filter out failed conversions
 
     console.log(`✅ Successfully uploaded ${uploadedImages.length} files`);
 
@@ -334,95 +536,175 @@ function sanitizeFileName(name: string): string {
     || 'untitled';
 }
 
-// Generate smart filename based on group and existing files
+// // Generate smart filename based on group and existing files
+// export async function generateSmartFilename(group: string, currentImageId: string, originalName: string): Promise<string> {
+//   const fileExtension = path.extname(originalName);
+  
+//   // Sanitize the group name for filesystem safety
+//   const sanitizedGroup = sanitizeFileName(group);
+  
+//   // Get all images in this group (excluding current image)
+//   const existingImages = await prisma.image.findMany({
+//     where: { 
+//       group: group, // Keep original group for database query
+//       id: { not: currentImageId }
+//     },
+//     orderBy: { createdAt: 'asc' }
+//   });
+  
+//   // Check if there's already an image with extracted code in this group
+//   const hasImageWithCode = existingImages.some(img => !!img.code);
+  
+//   let baseName: string;
+  
+//   if (existingImages.length === 0) {
+//     // First image in group - use SANITIZED_GROUP.ext
+//     baseName = `${sanitizedGroup}${fileExtension}`;
+//   } else if (hasImageWithCode) {
+//     // Group already has an image with extracted code - use SANITIZED_GROUP_X.ext
+//     baseName = `${sanitizedGroup}_${existingImages.length + 1}${fileExtension}`;
+//   } else {
+//     // Current image would be first with extracted code - use SANITIZED_GROUP.ext
+//     baseName = `${sanitizedGroup}${fileExtension}`;
+//   }
+  
+//   // Ensure global uniqueness with retry logic to handle race conditions
+//   let finalName = baseName;
+//   let counter = 1;
+//   let maxRetries = 20; // Prevent infinite loops
+  
+//   while (maxRetries > 0) {
+//     // Use a more robust check that includes a small random delay to reduce collision probability
+//     const existingImageWithName = await prisma.image.findFirst({
+//       where: {
+//         newName: finalName,
+//         id: { not: currentImageId }
+//       }
+//     });
+    
+//     if (!existingImageWithName) {
+//       // Name appears to be unique - try to claim it by updating the database
+//       try {
+//         // Attempt to set the name on the current image
+//         await prisma.image.update({
+//           where: { id: currentImageId },
+//           data: { newName: finalName }
+//         });
+        
+//         // If we get here, we successfully claimed the name
+//         return finalName;
+//       } catch (error) {
+//         // Database update failed - likely because another process claimed this name
+//         // Fall through to try the next counter value
+//         console.log(`Name collision detected for ${finalName}, trying next counter...`);
+//       }
+//     }
+    
+//     // Name exists or we failed to claim it, increment counter and try again
+//     counter++;
+//     const nameWithoutExt = baseName.replace(fileExtension, '');
+    
+//     // If baseName already has a suffix (e.g., "test_2"), replace it with the new counter
+//     if (nameWithoutExt.includes('_')) {
+//       const baseWithoutSuffix = nameWithoutExt.substring(0, nameWithoutExt.lastIndexOf('_'));
+//       finalName = `${baseWithoutSuffix}_${counter}${fileExtension}`;
+//     } else {
+//       finalName = `${nameWithoutExt}_${counter}${fileExtension}`;
+//     }
+    
+//     maxRetries--;
+//   }
+  
+//   // Fallback: if we couldn't find a unique name after many attempts, use UUID
+//   const fallbackName = `${sanitizedGroup}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${fileExtension}`;
+//   console.warn(`Failed to generate unique name for ${group}, using fallback: ${fallbackName}`);
+  
+//   await prisma.image.update({
+//     where: { id: currentImageId },
+//     data: { newName: fallbackName }
+//   });
+  
+//   return fallbackName;
+// }
+
+// export async function generateSmartFilename(group: string, currentImageId: string, originalName: string): Promise<string> {
+//   const fileExtension = path.extname(originalName);
+//   const sanitizedGroup = sanitizeFileName(group);
+
+//   // Find the correct index for the current image within its group, sorted by creation date
+//   const imagesInGroup = await prisma.image.findMany({
+//     where: { group: group },
+//     orderBy: { createdAt: 'asc' }
+//   });
+
+//   const currentIndex = imagesInGroup.findIndex(img => img.id === currentImageId);
+
+//   // The index determines the suffix. The first image (index 0) gets no suffix.
+//   const suffix = currentIndex > 0 ? `_${currentIndex + 1}` : '';
+//   const baseName = `${sanitizedGroup}${suffix}${fileExtension}`;
+
+//   // Ensure the generated name is globally unique, handling potential race conditions
+//   let finalName = baseName;
+//   let attempt = 0;
+//   const maxRetries = 20;
+
+//   while (attempt < maxRetries) {
+//     const existingImage = await prisma.image.findFirst({
+//       where: { newName: finalName, id: { not: currentImageId } }
+//     });
+
+//     if (!existingImage) {
+//       // Name is unique, update the database and return
+//       await prisma.image.update({
+//         where: { id: currentImageId },
+//         data: { newName: finalName }
+//       });
+//       return finalName;
+//     }
+
+//     // If name is taken, generate a new one with a higher suffix
+//     attempt++;
+//     const newSuffix = `_${currentIndex + 1 + attempt}`;
+//     finalName = `${sanitizedGroup}${newSuffix}${fileExtension}`;
+//   }
+
+//   // Fallback to a UUID-based name if a unique name can't be found
+//   const fallbackName = `${sanitizedGroup}_${uuidv4()}${fileExtension}`;
+//   await prisma.image.update({
+//     where: { id: currentImageId },
+//     data: { newName: fallbackName }
+//   });
+//   return fallbackName;
+// }
 export async function generateSmartFilename(group: string, currentImageId: string, originalName: string): Promise<string> {
   const fileExtension = path.extname(originalName);
-  
-  // Sanitize the group name for filesystem safety
   const sanitizedGroup = sanitizeFileName(group);
-  
-  // Get all images in this group (excluding current image)
-  const existingImages = await prisma.image.findMany({
-    where: { 
-      group: group, // Keep original group for database query
-      id: { not: currentImageId }
-    },
-    orderBy: { createdAt: 'asc' }
+
+  // Get all images in the group, sorted by their creation date to ensure a stable order.
+  const imagesInGroup = await prisma.image.findMany({
+    where: { group: group },
+    orderBy: { createdAt: 'asc' },
   });
-  
-  // Check if there's already an image with extracted code in this group
-  const hasImageWithCode = existingImages.some(img => !!img.code);
-  
-  let baseName: string;
-  
-  if (existingImages.length === 0) {
-    // First image in group - use SANITIZED_GROUP.ext
-    baseName = `${sanitizedGroup}${fileExtension}`;
-  } else if (hasImageWithCode) {
-    // Group already has an image with extracted code - use SANITIZED_GROUP_X.ext
-    baseName = `${sanitizedGroup}_${existingImages.length + 1}${fileExtension}`;
-  } else {
-    // Current image would be first with extracted code - use SANITIZED_GROUP.ext
-    baseName = `${sanitizedGroup}${fileExtension}`;
+
+  // Find the position of the current image in the sorted list.
+  let currentIndex = imagesInGroup.findIndex(img => img.id === currentImageId);
+
+  // If the image is not in the list (e.g., it's a new addition), it's the last one.
+  if (currentIndex === -1) {
+    currentIndex = imagesInGroup.length;
   }
-  
-  // Ensure global uniqueness with retry logic to handle race conditions
-  let finalName = baseName;
-  let counter = 1;
-  let maxRetries = 20; // Prevent infinite loops
-  
-  while (maxRetries > 0) {
-    // Use a more robust check that includes a small random delay to reduce collision probability
-    const existingImageWithName = await prisma.image.findFirst({
-      where: {
-        newName: finalName,
-        id: { not: currentImageId }
-      }
-    });
-    
-    if (!existingImageWithName) {
-      // Name appears to be unique - try to claim it by updating the database
-      try {
-        // Attempt to set the name on the current image
-        await prisma.image.update({
-          where: { id: currentImageId },
-          data: { newName: finalName }
-        });
-        
-        // If we get here, we successfully claimed the name
-        return finalName;
-      } catch (error) {
-        // Database update failed - likely because another process claimed this name
-        // Fall through to try the next counter value
-        console.log(`Name collision detected for ${finalName}, trying next counter...`);
-      }
-    }
-    
-    // Name exists or we failed to claim it, increment counter and try again
-    counter++;
-    const nameWithoutExt = baseName.replace(fileExtension, '');
-    
-    // If baseName already has a suffix (e.g., "test_2"), replace it with the new counter
-    if (nameWithoutExt.includes('_')) {
-      const baseWithoutSuffix = nameWithoutExt.substring(0, nameWithoutExt.lastIndexOf('_'));
-      finalName = `${baseWithoutSuffix}_${counter}${fileExtension}`;
-    } else {
-      finalName = `${nameWithoutExt}_${counter}${fileExtension}`;
-    }
-    
-    maxRetries--;
-  }
-  
-  // Fallback: if we couldn't find a unique name after many attempts, use UUID
-  const fallbackName = `${sanitizedGroup}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}${fileExtension}`;
-  console.warn(`Failed to generate unique name for ${group}, using fallback: ${fallbackName}`);
-  
+
+  // The first image (index 0) has no suffix. Subsequent images are numbered starting from 2.
+  const suffix = currentIndex > 0 ? `_${currentIndex + 1}` : '';
+  const finalName = `${sanitizedGroup}${suffix}${fileExtension}`;
+
+  // This function will now update the database directly with the correct name.
   await prisma.image.update({
     where: { id: currentImageId },
-    data: { newName: fallbackName }
+    data: { newName: finalName },
   });
-  
-  return fallbackName;
+
+  return finalName;
 }
 
 // Start Gemini processing for uploaded images
@@ -555,19 +837,33 @@ export async function processGeminiForImage(imageId: string): Promise<void> {
       return;
     }
 
-    // Update status to extracting
+    // // Update status to extracting
+    // await prisma.image.update({
+    //   where: { id: imageId },
+    //   data: { 
+    //     geminiStatus: 'processing',
+    //     status: 'extracting'
+    //   }
+    // });
+
+    // // Broadcast processing status update
+    // broadcastGeminiUpdate(imageId, { 
+    //   geminiStatus: 'processing',
+    //   status: 'extracting'
+    // });
+    // Update status to error
     await prisma.image.update({
       where: { id: imageId },
       data: { 
-        geminiStatus: 'processing',
-        status: 'extracting'
+        geminiStatus: 'error',
+        status: 'api_error' // Use the new specific status
       }
     });
 
-    // Broadcast processing status update
+    // Broadcast error update
     broadcastGeminiUpdate(imageId, { 
-      geminiStatus: 'processing',
-      status: 'extracting'
+      geminiStatus: 'error',
+      status: 'api_error'
     });
 
     console.log(`🧠 Processing Gemini OCR for ${image.originalName}...`);

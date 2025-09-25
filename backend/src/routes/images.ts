@@ -35,6 +35,29 @@ function sanitizeFileName(name: string): string {
     || 'untitled';
 }
 
+// Re-indexes filenames within a group to ensure they are sequential
+async function reindexGroup(group: string) {
+  if (!group || !group.trim()) return;
+
+  const { generateSmartFilename: generateSmartFilenameWithUpdate } = await import('./upload');
+  const { broadcastGeminiUpdate } = await import('./upload');
+
+  const imagesInGroup = await prisma.image.findMany({
+    where: { group },
+    orderBy: { createdAt: 'asc' }, // Sort by creation time to maintain original order
+  });
+
+  for (const image of imagesInGroup) {
+    // The generate function will now correctly find the new, proper index
+    const newName = await generateSmartFilenameWithUpdate(group, image.id, image.originalName);
+
+    // Broadcast the change to the UI
+    broadcastGeminiUpdate(image.id, { newName });
+  }
+
+  console.log(`Re-indexed ${imagesInGroup.length} images in group "${group}"`);
+}
+
 // Generate smart filename based on group and existing files
 async function generateSmartFilename(group: string, currentImageId: string, originalName: string): Promise<string> {
   const fileExtension = path.extname(originalName);
@@ -182,6 +205,184 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// // PUT /api/images/:id - Update image metadata
+// router.put('/:id', async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { newName, group } = req.body;
+
+//     const image = await prisma.image.findUnique({
+//       where: { id },
+//     });
+
+//     if (!image) {
+//       return res.status(404).json({ error: 'Image not found' });
+//     }
+
+//     let finalNewName = newName;
+//     let groupingStatus = image.groupingStatus;
+//     let groupingConfidence = image.groupingConfidence;
+//     let status = image.status;
+
+//     // // If group is being updated, handle smart filename generation
+//     // if (group !== undefined && group !== image.group) {
+//     //   if (group && group.trim()) {
+//     //     // Group is being assigned/changed - ALWAYS override any existing status
+//     //     // This allows users to override extracted, auto_grouped, ungrouped, etc.
+//     //     // Import and use the generateSmartFilename that updates the database
+//     //     const { generateSmartFilename: generateSmartFilenameWithUpdate } = await import('./upload');
+//     //     await generateSmartFilenameWithUpdate(group, id, image.originalName);
+//     //     groupingStatus = 'complete';
+//     //     groupingConfidence = 1.0;
+        
+//     //     // Validate the group format and set appropriate status
+//     //     if (isValidSampleCode(group)) {
+//     //       status = 'user_grouped'; // Valid format - mark as user grouped
+//     //     } else {
+//     //       status = 'invalid_group'; // Invalid format
+//     //     }
+//     //   } else {
+//     //     // Group is being removed - clear the name and mark as ungrouped
+//     //     finalNewName = '';
+//     //     groupingStatus = 'complete';
+//     //     groupingConfidence = 0;
+//     //     status = 'ungrouped'; // Mark as ungrouped when user manually clears group
+//     //   }
+//     // }
+//     const oldGroup = image.group;
+//     let imagesToPropagate: any[] = [];
+
+//     // If group is being updated, handle smart filename generation
+//     if (group !== undefined && group !== image.group) {
+//       // Find other images in the old group to propagate the change
+//       if (oldGroup && oldGroup.trim()) {
+//         imagesToPropagate = await prisma.image.findMany({
+//           where: { group: oldGroup, id: { not: id } }
+//         });
+//       }
+
+//       if (group && group.trim()) {
+//         // Group is being assigned/changed
+//         const { generateSmartFilename: generateSmartFilenameWithUpdate } = await import('./upload');
+//         await generateSmartFilenameWithUpdate(group, id, image.originalName);
+//         groupingStatus = 'complete';
+//         groupingConfidence = 1.0;
+//         status = isValidSampleCode(group) ? 'user_grouped' : 'invalid_group';
+//       } else {
+//         // Group is being removed
+//         finalNewName = '';
+//         groupingStatus = 'complete';
+//         groupingConfidence = 0;
+//         status = 'ungrouped';
+//       }
+//     }
+
+//     // Prepare update data - exclude newName if we used generateSmartFilename
+//     const updateData: any = {
+//       ...(group !== undefined && { group }),
+//       status,
+//       groupingStatus,
+//       groupingConfidence,
+//       updatedAt: new Date(),
+//     };
+
+//     // Only include newName if we didn't call generateSmartFilename or if group was cleared
+//     if (group === undefined || (group !== undefined && !group.trim())) {
+//       updateData.newName = finalNewName;
+//     }
+
+//     const updatedImage = await prisma.image.update({
+//       where: { id },
+//       data: updateData,
+//     });
+
+//     return res.json(transformImageForResponse(updatedImage));
+
+//   } catch (error) {
+//     console.error('Error updating image:', error);
+//     return res.status(500).json({ error: 'Failed to update image' });
+//   }
+// });
+
+// // PUT /api/images/:id - Update image metadata
+// router.put('/:id', async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { newName, group } = req.body;
+
+//     // 1. Fetch the original image from the database
+//     const image = await prisma.image.findUnique({ where: { id } });
+
+//     if (!image) {
+//       return res.status(404).json({ error: 'Image not found' });
+//     }
+
+//     const oldGroup = image.group;
+//     let updatedImage = image; // Start with the original image data
+
+//     // 2. Determine if the group name has actually changed
+//     if (group !== undefined && group !== oldGroup) {
+//       // Find all other images in the old group BEFORE making any changes
+//       const imagesToPropagate = oldGroup && oldGroup.trim()
+//         ? await prisma.image.findMany({ where: { group: oldGroup, id: { not: id } } })
+//         : [];
+
+//       // Update the primary image first
+//       const { generateSmartFilename: generateSmartFilenameWithUpdate } = await import('./upload');
+//       await generateSmartFilenameWithUpdate(group, id, image.originalName);
+//       const newStatus = isValidSampleCode(group) ? 'user_grouped' : 'invalid_group';
+      
+//       updatedImage = await prisma.image.update({
+//         where: { id },
+//         data: {
+//           group: group,
+//           status: newStatus,
+//           groupingStatus: 'complete',
+//           groupingConfidence: 1.0,
+//           updatedAt: new Date(),
+//         },
+//       });
+
+//       // Now, propagate the change to the other images
+//       if (imagesToPropagate.length > 0) {
+//         const { broadcastGeminiUpdate } = await import('./upload');
+//         for (const imageToUpdate of imagesToPropagate) {
+//           await generateSmartFilenameWithUpdate(group, imageToUpdate.id, imageToUpdate.originalName);
+//           const propagatedUpdate = await prisma.image.update({
+//             where: { id: imageToUpdate.id },
+//             data: {
+//               group: group,
+//               status: newStatus,
+//               groupingStatus: 'complete',
+//               groupingConfidence: 1.0,
+//               updatedAt: new Date(),
+//             }
+//           });
+//           // Broadcast the changes to the UI
+//           broadcastGeminiUpdate(propagatedUpdate.id, {
+//             group: propagatedUpdate.group,
+//             newName: propagatedUpdate.newName,
+//             status: propagatedUpdate.status
+//           });
+//         }
+//         console.log(`Propagated group change from "${oldGroup}" to "${group}" for ${imagesToPropagate.length} other images.`);
+//       }
+//     } else if (newName !== undefined && newName !== image.newName) {
+//       // Handle cases where only the name is changed without affecting the group
+//       updatedImage = await prisma.image.update({
+//         where: { id },
+//         data: { newName, updatedAt: new Date() },
+//       });
+//     }
+
+//     return res.json(transformImageForResponse(updatedImage));
+
+//   } catch (error) {
+//     console.error('Error updating image:', error);
+//     return res.status(500).json({ error: 'Failed to update image' });
+//   }
+// });
+
 // PUT /api/images/:id - Update image metadata
 router.put('/:id', async (req, res) => {
   try {
@@ -196,38 +397,28 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Image not found' });
     }
 
+    const oldGroup = image.group; // Capture the original group
+
     let finalNewName = newName;
     let groupingStatus = image.groupingStatus;
     let groupingConfidence = image.groupingConfidence;
     let status = image.status;
 
-    // If group is being updated, handle smart filename generation
     if (group !== undefined && group !== image.group) {
       if (group && group.trim()) {
-        // Group is being assigned/changed - ALWAYS override any existing status
-        // This allows users to override extracted, auto_grouped, ungrouped, etc.
-        // Import and use the generateSmartFilename that updates the database
         const { generateSmartFilename: generateSmartFilenameWithUpdate } = await import('./upload');
         await generateSmartFilenameWithUpdate(group, id, image.originalName);
         groupingStatus = 'complete';
         groupingConfidence = 1.0;
-        
-        // Validate the group format and set appropriate status
-        if (isValidSampleCode(group)) {
-          status = 'user_grouped'; // Valid format - mark as user grouped
-        } else {
-          status = 'invalid_group'; // Invalid format
-        }
+        status = isValidSampleCode(group) ? 'user_grouped' : 'invalid_group';
       } else {
-        // Group is being removed - clear the name and mark as ungrouped
         finalNewName = '';
         groupingStatus = 'complete';
         groupingConfidence = 0;
-        status = 'ungrouped'; // Mark as ungrouped when user manually clears group
+        status = 'ungrouped';
       }
     }
 
-    // Prepare update data - exclude newName if we used generateSmartFilename
     const updateData: any = {
       ...(group !== undefined && { group }),
       status,
@@ -236,7 +427,6 @@ router.put('/:id', async (req, res) => {
       updatedAt: new Date(),
     };
 
-    // Only include newName if we didn't call generateSmartFilename or if group was cleared
     if (group === undefined || (group !== undefined && !group.trim())) {
       updateData.newName = finalNewName;
     }
@@ -245,6 +435,16 @@ router.put('/:id', async (req, res) => {
       where: { id },
       data: updateData,
     });
+
+    // After the update, re-index both the old and new groups if a move occurred
+    if (group !== undefined && group !== oldGroup) {
+      if (oldGroup) {
+        await reindexGroup(oldGroup); // Re-index the original group
+      }
+      if (group) {
+        await reindexGroup(group); // Re-index the new group
+      }
+    }
 
     return res.json(transformImageForResponse(updatedImage));
 
@@ -363,6 +563,18 @@ router.delete('/:id', async (req, res) => {
 
     if (!image) {
       return res.status(404).json({ error: 'Image not found' });
+    }
+
+    const groupToReindex = image.group; // Capture the group name before deleting
+
+    // Delete from database first
+    await prisma.image.delete({
+      where: { id },
+    });
+
+    // After deletion, re-index the group if it had one
+    if (groupToReindex) {
+      await reindexGroup(groupToReindex);
     }
 
     // Delete from database first
@@ -574,18 +786,32 @@ router.post('/export', async (req, res) => {
 
     console.log('📦 Creating zip archive...');
 
+    // // STEP 3: Add images to zip with embedded EXIF metadata
+    // let processedCount = 0;
+    // for (const image of allImages) {
+    //   try {
+    //     const originalPath = path.resolve(image.filePath);
+        
+    //     // Check if original file exists
+    //     if (!fs.existsSync(originalPath)) {
+    //       console.warn(`⚠️  File not found: ${originalPath}`);
+    //       continue;
+    //     }
     // STEP 3: Add images to zip with embedded EXIF metadata
     let processedCount = 0;
     for (const image of allImages) {
       try {
-        const originalPath = path.resolve(image.filePath);
-        
-        // Check if original file exists
-        if (!fs.existsSync(originalPath)) {
-          console.warn(`⚠️  File not found: ${originalPath}`);
-          continue;
-        }
+        // Determine which file to use for the export: original or processed
+        const exportFilePath = image.originalFilePath || image.filePath;
+        const originalPath = path.resolve(exportFilePath);
 
+        if (!fs.existsSync(originalPath)) {
+          console.warn(`⚠️  File not found: ${originalPath}, falling back to processed file.`);
+          if (!fs.existsSync(image.filePath)) {
+            console.error(`❌ Both original and processed files not found for ${image.originalName}`);
+            continue;
+          }
+        }
         // Build metadata JSON string
         const metadata = {
           originalName: image.originalName,
@@ -611,13 +837,17 @@ router.post('/export', async (req, res) => {
         await exiftool.write(tempFilePath, { UserComment: metadataJson }, ["-overwrite_original"]);
 
         // Add the modified file to the archive
+        // archive.file(tempFilePath, { name: `images/${image.newName}` });
         archive.file(tempFilePath, { name: `images/${image.newName}` });
-        
+
         // Also add a sidecar JSON metadata file (optional but useful)
         const metadataFileName = `metadata/${image.newName!.replace(/\.[^/.]+$/, '.json')}`;
         archive.append(metadataJson, { name: metadataFileName });
         
         processedCount++;
+      // } catch (error) {
+      //   console.error(`❌ Error processing image ${image.originalName}:`, error);
+      // }
       } catch (error) {
         console.error(`❌ Error processing image ${image.originalName}:`, error);
       }

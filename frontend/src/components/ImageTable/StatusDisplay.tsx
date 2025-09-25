@@ -66,6 +66,12 @@ export function StatusDisplay({ status, className }: StatusDisplayProps) {
           className: 'bg-green-100 text-green-700 border-green-200',
           description: 'Manually assigned to group by user'
         };
+      case 'api_error': // Add this new case
+        return {
+          text: 'API Error',
+          className: 'bg-red-100 text-red-700 border-red-200',
+          description: 'The AI analysis failed. You can try again.'
+        };
       default:
         return {
           text: 'Unknown',

@@ -176,8 +176,11 @@ export const GroupEditor = forwardRef<GroupEditorHandle, GroupEditorProps>(({
     // Find image with matching group whose newName does NOT contain "_" (main file)
     const mainImg = images.find(img => img.group === group && img.newName && !img.newName.includes('_'))
       || images.find(img => img.group === group);
+    // if (mainImg?.thumbnailPath) {
+    //   return `/thumbnails/${mainImg.thumbnailPath.split('/').pop()}`;
+    // }
     if (mainImg?.thumbnailPath) {
-      return `/thumbnails/${mainImg.thumbnailPath.split('/').pop()}`;
+      return `/thumbnails/${mainImg.thumbnailPath.replace(/\\/g, '/').split('/').pop()}`;
     }
     return null;
   };

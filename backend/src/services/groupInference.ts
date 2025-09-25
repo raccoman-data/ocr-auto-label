@@ -290,7 +290,23 @@ export async function runGroupInference(): Promise<void> {
   console.log('🔍 Starting group inference for unlabeled images...');
   
   try {
-    // Get all images sorted by timestamp
+    // // Get all images sorted by timestamp
+    // const allImages = await prisma.image.findMany({
+    //   select: {
+    //     id: true,
+    //     timestamp: true,
+    //     group: true,
+    //     objectDesc: true,
+    //     objectColors: true,
+    //     originalName: true,
+    //     newName: true,
+    //     groupingStatus: true,
+    //     groupingConfidence: true
+    //   },
+    //   orderBy: { timestamp: 'asc' }
+    // });
+
+    // Get all images sorted alphabetically by original name
     const allImages = await prisma.image.findMany({
       select: {
         id: true,
@@ -303,7 +319,7 @@ export async function runGroupInference(): Promise<void> {
         groupingStatus: true,
         groupingConfidence: true
       },
-      orderBy: { timestamp: 'asc' }
+      orderBy: { originalName: 'asc' }
     });
 
     // Separate images into groups: labeled vs unlabeled
@@ -320,21 +336,40 @@ export async function runGroupInference(): Promise<void> {
     let inferencesCount = 0;
     
     // Process each unlabeled image
+    // for (const unlabeledImage of unlabeledImages) {
+    //   const targetTimestamp = new Date(unlabeledImage.timestamp);
+      
+    //   // Find labeled images within ±3 minutes
+    //   const timeWindowMs = 3 * 60 * 1000; // 3 minutes in milliseconds
+    //   const candidateImages = labeledImages.filter(labeledImg => {
+    //     const candidateTimestamp = new Date(labeledImg.timestamp);
+    //     const timeDiff = Math.abs(targetTimestamp.getTime() - candidateTimestamp.getTime());
+    //     return timeDiff <= timeWindowMs;
+    //   });
+      
+    //   if (candidateImages.length === 0) {
+    //     continue;
+    //   }
+    // Process each unlabeled image
     for (const unlabeledImage of unlabeledImages) {
-      const targetTimestamp = new Date(unlabeledImage.timestamp);
-      
-      // Find labeled images within ±3 minutes
-      const timeWindowMs = 3 * 60 * 1000; // 3 minutes in milliseconds
-      const candidateImages = labeledImages.filter(labeledImg => {
-        const candidateTimestamp = new Date(labeledImg.timestamp);
-        const timeDiff = Math.abs(targetTimestamp.getTime() - candidateTimestamp.getTime());
-        return timeDiff <= timeWindowMs;
-      });
-      
+      const currentIndex = allImages.findIndex(img => img.id === unlabeledImage.id);
+      if (currentIndex === -1) continue;
+
+      // Define the proximity window (5 images before and 5 after)
+      const proximity = 9;
+      const startIndex = Math.max(0, currentIndex - proximity);
+      const endIndex = Math.min(allImages.length - 1, currentIndex + proximity);
+
+      // Get nearby images and filter for those that are already labeled
+      const candidateImages = allImages.slice(startIndex, endIndex + 1).filter(img =>
+        img.id !== unlabeledImage.id && // Exclude the image itself
+        img.group && img.group.trim() !== '' // Ensure the candidate has a group
+      );
+
       if (candidateImages.length === 0) {
         continue;
       }
-      
+
       // Parse object colors for the unlabeled image
       let unlabeledColors: Array<{color: string, name: string}> | null = null;
       if (unlabeledImage.objectColors) {

@@ -68,7 +68,7 @@ export function TableHeader() {
       
       {/* Status Column */}
       <div className="w-32 linear-cell flex justify-end pr-2">
-        Status
+        <SortButton field="status">Status</SortButton>
       </div>
     </div>
   );
