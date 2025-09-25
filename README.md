@@ -1,6 +1,6 @@
 # Lead-Photo Auto-Tagger
 
-> This is a forked version of the original Lead-Photo Auto-Tagger created by Neil Bhammar. The original repository can be found here.
+> This is a forked version of the original Lead-Photo Auto-Tagger created by Neil Bhammar. The original repository can be found [here](https://github.com/neilbhammar/ocr-auto-label).
 > 
 > 
 > This fork includes several modifications and usability improvements to specifically address the photo relabelling task for [leadresearch.org](https://leadresearch.org/).
