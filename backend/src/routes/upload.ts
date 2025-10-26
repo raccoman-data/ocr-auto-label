@@ -1169,23 +1169,51 @@ router.post('/zip', zipUpload.single('file'), async (req, res) => {
       extractionTime: estimatedSeconds,
     });
 
-  } catch (error) {
-    console.error('ZIP upload error:', error);
+  // } catch (error) {
+  //   console.error('ZIP upload error:', error);
     
-    // Provide more specific error messages
-    let errorMessage = 'Failed to process ZIP file';
-    if (error instanceof Error) {
-      if (error.message.includes('Invalid ZIP file')) {
-        errorMessage = 'Invalid or corrupted ZIP file';
-      } else if (error.message.includes('No images found')) {
-        errorMessage = 'No supported image files found in ZIP archive';
-      } else {
-        errorMessage = `ZIP processing failed: ${error.message}`;
+  //   // Provide more specific error messages
+  //   let errorMessage = 'Failed to process ZIP file';
+  //   if (error instanceof Error) {
+  //     if (error.message.includes('Invalid ZIP file')) {
+  //       errorMessage = 'Invalid or corrupted ZIP file';
+  //     } else if (error.message.includes('No images found')) {
+  //       errorMessage = 'No supported image files found in ZIP archive';
+  //     } else {
+  //       errorMessage = `ZIP processing failed: ${error.message}`;
+  //     }
+  //   }
+    
+  //   return res.status(500).json({ error: errorMessage });
+  // }
+    } catch (error) {
+      console.error('ZIP upload error:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to process ZIP file';
+      if (error instanceof Error) {
+        if (error.message.includes('Invalid ZIP file')) {
+          errorMessage = 'Invalid or corrupted ZIP file. Please try creating the ZIP file again.';
+        } else if (error.message.includes('No images found')) {
+          errorMessage = 'No supported image files (JPG, PNG, HEIC) were found in the ZIP archive.';
+        } else {
+          // More detailed error for debugging
+          errorMessage = `ZIP processing failed: ${error.message}`;
+        }
       }
+      
+      // Ensure the temporary file is deleted on error
+      if (req.file && req.file.path) {
+        try {
+          await fs.unlink(req.file.path);
+          console.log(`🗑️  Deleted temporary ZIP due to error: ${req.file.path}`);
+        } catch (unlinkErr) {
+          console.warn('Failed to delete temporary ZIP file on error:', unlinkErr);
+        }
+      }
+      
+      return res.status(500).json({ error: errorMessage });
     }
-    
-    return res.status(500).json({ error: errorMessage });
-  }
 });
 
 // Store active SSE connections

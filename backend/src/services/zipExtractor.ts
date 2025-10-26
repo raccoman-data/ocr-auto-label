@@ -187,8 +187,30 @@ export async function extractImagesFromZipFile(
         resolve(imagesExtracted);
       });
 
-      // Process each entry on demand
+      // // Process each entry on demand
+      // zipfile.on('entry', (entry: Entry) => {
+      //   // Skip directories and unwanted files
+      //   if (entry.fileName.endsWith('/') || !isSupportedImageFile(entry.fileName)) {
+      //     zipfile.readEntry();
+      //     return;
+      //   }
+
+      //   const baseName = path.basename(entry.fileName);
+      //   if (baseName.startsWith('.') || baseName.startsWith('__MACOSX')) {
+      //     zipfile.readEntry();
+      //     return;
+      //   }
+
+      //   // Open stream for the file entry
+      //   zipfile.openReadStream(entry, async (streamErr: Error | null, readStream?: Readable) => {
       zipfile.on('entry', (entry: Entry) => {
+        // SECURITY: Prevent path traversal and absolute paths
+        if (entry.fileName.startsWith('/') || entry.fileName.startsWith('\\') || entry.fileName.includes('..')) {
+          console.warn(`⚠️  Skipping unsafe ZIP entry path: ${entry.fileName}`);
+          zipfile.readEntry();
+          return;
+        }
+
         // Skip directories and unwanted files
         if (entry.fileName.endsWith('/') || !isSupportedImageFile(entry.fileName)) {
           zipfile.readEntry();
@@ -196,7 +218,8 @@ export async function extractImagesFromZipFile(
         }
 
         const baseName = path.basename(entry.fileName);
-        if (baseName.startsWith('.') || baseName.startsWith('__MACOSX')) {
+        // Skip macOS metadata files and other hidden system files
+        if (baseName.startsWith('.') || entry.fileName.startsWith('__MACOSX')) {
           zipfile.readEntry();
           return;
         }

@@ -146,13 +146,37 @@ export async function extractTextFromImage(imagePath: string): Promise<GeminiRes
 // - 0.0: No code visible or completely illegible
 
 // Set codeConfidence to 0.0 if code is "NA".`;
-    const prompt = `You are analysing images from a field study. Everyday objects were tested and photographed along with an ID written on masking tape. I want you to several fields, including the ID and details about the object.
-The ID is in the form "[a-zA-Z]{3}.[0-9].[0-9].[0-9].[0-9]+[A-Z]*.[0-9]+[A-Z]*.[0-9]+". Focus on the full stops as these are key to deciphering it. Be aware that the letters after numbers are sequential so unlikely to see later letters. If something is falling far outside this range beware of common mix-ups eg "I" is actually "1".
+//     const prompt = `You are analysing images from a field study. Everyday objects were tested and photographed along with an ID written on masking tape. I want you to several fields, including the ID and details about the object.
+// The ID is in the form "[a-zA-Z]{3}.[0-9].[0-9].[0-9].[0-9]+[A-Z]*.[0-9]+[A-Z]*.[0-9]+". Focus on the full stops as these are key to deciphering it. Be aware that the letters after numbers are sequential so unlikely to see later letters. If something is falling far outside this range beware of common mix-ups eg "I" is actually "1".
+// For the colours, try to focus on the primary object itself, not the background, label, etc.
+// The letters at the start will be "KEN" or "MWI".
+// Respond only with JSON:
+// {
+// "code": "MWI… or KEN… sample code if found, otherwise NA",
+// "codeConfidence": 0.85,
+// "otherText": "Any other text visible in the image, otherwise NA",
+// "objectDesc": "Describe the main object in 3 words or less, otherwise NA",
+// "objectColors": [
+// {"color": "#RRGGBB", "name": "descriptive color name"},
+// {"color": "#RRGGBB", "name": "descriptive color name"},
+// {"color": "#RRGGBB", "name": "descriptive color name"}
+// ]}`;
+const prompt = `You are analysing images from a field study. Everyday objects were tested and photographed along with an ID written on masking tape. I want you to several fields, including the ID and details about the object.
+
+The ID is in the form "[a-zA-Z]{3}.[0-9].[0-9].[0-9].[0-9]+[A-Z]*.[0-9]+[A-Z]*.[0-9]+" or "ABC-DEFGH-I-J". Focus on the full stops or hyphens as these are key to deciphering it. Be aware that the letters after numbers are sequential so unlikely to see later letters. If something is falling far outside this range beware of common mix-ups eg "I" is actually "1".
+
+For the new "ABC-DEFGH-I-J" format:
+- ABC will be "NBO" or "BUS".
+- DEFGH will be a 5-digit number.
+- I will be a single digit.
+- J will be one of "C", "F", "P", or "G".
+
 For the colours, try to focus on the primary object itself, not the background, label, etc.
-The letters at the start will be "KEN" or "MWI".
+The letters at the start will be "KEN", "MWI", "NBO", or "BUS".
+
 Respond only with JSON:
 {
-"code": "MWI… or KEN… sample code if found, otherwise NA",
+"code": "MWI… or KEN… or NBO-/BUS- sample code if found, otherwise NA",
 "codeConfidence": 0.85,
 "otherText": "Any other text visible in the image, otherwise NA",
 "objectDesc": "Describe the main object in 3 words or less, otherwise NA",

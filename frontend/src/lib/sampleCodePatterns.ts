@@ -31,6 +31,17 @@ export interface SampleCodePattern {
  */
 export const SAMPLE_CODE_PATTERNS: SampleCodePattern[] = [
   {
+    id: 'generic_3_digit', // Unique identifier for the new pattern
+    name: 'Generic 3-Digit Country Code',
+    description: 'Format: [3-Letter Code].[Digit].[Digit]',
+    example: 'AGO.1.0', // Example provided by the user
+    segments: [
+      { name: 'Country', description: '3-Letter country code', type: 'fixed', value: '[A-Z]{3}' }, // Use regex-like representation or adjust type
+      { name: 'Segment 1', description: 'First numeric digit', type: 'range', min: 0, max: 9 },
+      { name: 'Segment 2', description: 'Second numeric digit', type: 'range', min: 0, max: 9 }
+    ]
+  },
+  {
     id: 'mwi_type_1',
     name: 'MWI Type 1',
     description: 'Malawi Type 1 sample codes',
@@ -74,6 +85,18 @@ export const SAMPLE_CODE_PATTERNS: SampleCodePattern[] = [
       { name: 'Batch', description: 'Batch number', type: 'range', min: 1, max: 11 },
       { name: 'Month', description: 'Collection month', type: 'range', min: 1, max: 12 }
     ]
+  },
+  {
+  id: 'kenya_new_format',
+  name: 'Kenya New Format',
+  description: 'Kenya new sample codes (NBO/BUS)',
+  example: 'NBO-12345-1-C',
+  segments: [
+    { name: 'City', description: 'City name', type: 'fixed', value: ['NBO', 'BUS'] },
+    { name: 'Household', description: '5-digit random household number', type: 'range', min: 10000, max: 99999 },
+    { name: 'Sample', description: 'Sample number', type: 'range', min: 1, max: 9 },
+    { name: 'Type', description: 'Sample type', type: 'fixed', value: ['C', 'F', 'P', 'G'] }
+  ]
   }
 ];
 
@@ -81,54 +104,66 @@ export const SAMPLE_CODE_PATTERNS: SampleCodePattern[] = [
  * Validates a sample code against all defined patterns
  * This replaces the need for complex regex patterns
  */
+// Modify the isValidSampleCode function to handle the new pattern type
 export function isValidSampleCode(code: string | null): boolean {
   if (!code) return false;
-  
+
   const trimmedCode = code.trim().toUpperCase();
   const segments = trimmedCode.split('.');
-  
-  // Try each pattern
+
   for (const pattern of SAMPLE_CODE_PATTERNS) {
     if (segments.length !== pattern.segments.length) continue;
-    
+
     let isValid = true;
-    
+
     for (let i = 0; i < pattern.segments.length; i++) {
       const segment = segments[i];
       const definition = pattern.segments[i];
-      
+
+      if (!segment || !definition) { // Added check for definition existence
+        isValid = false;
+        break;
+      }
+
       if (definition.type === 'fixed') {
-        if (segment !== definition.value) {
+        // Handle both exact value and regex-like pattern for fixed type
+        if (definition.value && definition.value.startsWith('[') && definition.value.endsWith(']')) {
+           // Basic regex check for 3 letters
+           if (!/^[A-Z]{3}$/.test(segment)) {
+             isValid = false;
+             break;
+           }
+        } else if (segment !== definition.value) {
           isValid = false;
           break;
         }
       } else if (definition.type === 'range') {
         const num = parseInt(segment);
-        if (isNaN(num) || num < definition.min! || num > definition.max!) {
+        // Added checks for definition.min and definition.max existence before accessing them
+        if (isNaN(num) || (definition.min != null && num < definition.min) || (definition.max != null && num > definition.max)) {
           isValid = false;
           break;
         }
       } else if (definition.type === 'rangeWithLetters') {
-        // Handle formats like "7B" where number is followed by letter
         const match = segment.match(/^(\d+)([A-Z])$/);
         if (!match) {
           isValid = false;
           break;
         }
-        
+
         const num = parseInt(match[1]);
         const letter = match[2];
-        
-        if (num < definition.min! || num > definition.max! || !definition.letters!.includes(letter)) {
+        // Added checks for definition.min, definition.max and definition.letters existence
+        if ((definition.min != null && num < definition.min) || (definition.max != null && num > definition.max) || !definition.letters?.includes(letter)) {
           isValid = false;
           break;
         }
       }
     }
-    
+
     if (isValid) return true;
   }
-  
+
   return false;
 }
 

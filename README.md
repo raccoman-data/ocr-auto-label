@@ -17,7 +17,7 @@ This version of the application builds upon the original with the following key 
 - **Improved User Interface:** Added the ability to sort the image table by processing status. The interface will now also display specific error messages from the AI API if a request fails.
 - **Simplified Pattern Management:** Introduced a more straightforward way to manage and validate the sample code patterns used for OCR. For more details, please see [**Easy Pattern Management**](https://www.google.com/search?q=EASY_PATTERN_MANAGEMENT.md).
 - **Clearer Documentation for New Codes:** Added a dedicated guide for developers or users who need to add new sample code formats. See [**Adding New Sample Codes**](https://www.google.com/search?q=ADDING_NEW_SAMPLE_CODES.md).
-
+    
 ## Known Issues
 
 This is a work in progress, and there are some known bugs to be aware of:
@@ -25,6 +25,45 @@ This is a work in progress, and there are some known bugs to be aware of:
 - **HEIC File Conversion:** The application does not automatically convert HEIC files. These files must be converted to JPG or PNG format before being uploaded. Manual preprocessing is a current workaround.
 - **Incomplete Image Export:** In some cases, the final exported ZIP file may not contain all the renamed image files due to a process ending prematurely. The generated metadata file can be used to manually rename the files in post-processing as a workaround.
 - **Large Batch Processing:** The application may become unstable or crash when processing a very large number of images (e.g., 5,000+) in a single session. It's recommended to work with smaller batches.
+
+## Colab Notebooks
+1. Image Ingestion and Conversion (copy_folder.ipynb)
+Purpose: This script is the first step in the pipeline. Its job is to ingest all raw images from various sources and standardize them into a consistent format.
+
+Process:
+
+Input: Reads all files from the plastic_foodware/All photos directory.
+
+Action: It automatically detects image types. Any Apple-native HEIC (.heic) images are converted to the standard JPEG (.jpeg) format. All other files (like .jpg, .png) are copied directly.
+
+Output: All processed and standardized images are saved in the plastic_foodware/plastic_foodware_input folder, which serves as the input for the next step.
+
+2. Image Grouping and Renaming (rename_photos.ipynb)
+Purpose: This script is the second step, designed to organize the standardized images using a master metadata file. It renames the images based on the "group" they belong to (i.e., multiple photos of the same item).
+
+Process:
+
+Input: Reads the standardized images from plastic_foodware/plastic_foodware_input and a master plastic_foodware/metadata.csv file.
+
+Action: It looks up each image in the metadata.csv to find its assigned Group. It then generates a new, systematic filename for each image, such as BFA.1.0_1.jpg, BFA.1.0_2.jpg, etc., where BFA.1.0 is the group ID and _1, _2 are incrementing counters.
+
+Output: The script copies all images to the plastic_foodware/plastic_foodware_output directory with their new filenames. It also saves an updated metadata.csv (which now includes the new filenames) into this same output folder.
+
+3. AI-Powered Item Description (grouped_img_desc.ipynb)
+Purpose: This is the final analysis step. It uses the Gemini 2.0 Flash multimodal model to look at all the photos for each item group and generate a single, consolidated description.
+
+Process:
+
+Input: Reads the systematically named images from the plastic_foodware/plastic_foodware_output folder.
+
+Action: The script automatically bundles the images by their group prefix (e.g., all photos starting with BFA.1.0_). It sends this entire group of images to the Gemini model in a single request. The AI analyzes all photos for that item to extract key details based on a specific JSON schema (e.g., brand, materials_specific, colours, item_description).
+
+Output: The script collects the AI-generated JSON response for every group and saves them as a single, structured output.csv file in the plastic_foodware/plastic_foodware_output directory. This file is the final dataset, linking each item group to its detailed description.
+
+
+## Suggested Next Steps
+- **Migrate Entire Project to Google Colab:** Could be achived in google colab so we dont have to transfer files and zip folders
+- **Soft-code the ID Format:** Allow the user to input the ID format (e.g. using Regex) when choosing the folder. This affects two parts of the code - 1) The prompt that is fed to the LLM API, influencing how likely it is to pick the correct piece of text and transcribe it correctly. 2) The ID Checker, which takes the ID returned from the LLM and compares it to the Regex - if it does not match it is just highlighted to the user, not removed.
 
 ## The Problem This Solves (Original)
 
