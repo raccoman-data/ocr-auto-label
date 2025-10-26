@@ -1,410 +1,265 @@
-# Lead-Photo Auto-Tagger
+# **Lead-Photo Auto-Tagger**
 
-> This is a forked version of the original Lead-Photo Auto-Tagger created by Neil Bhammar. The original repository can be found [here](https://github.com/neilbhammar/ocr-auto-label).
-> 
-> 
-> This fork includes several modifications and usability improvements to specifically address the photo relabelling task for [leadresearch.org](https://leadresearch.org/).
-> 
+This is a forked version of the original Lead-Photo Auto-Tagger created by Neil Bhammar. The original repository can be found [here](https://github.com/neilbhammar/ocr-auto-label).
 
-## Changes in This Fork
+This fork includes several modifications and usability improvements specifically to address the photo relabelling task for [leadresearch.org](https://leadresearch.org/).
 
-This version of the application builds upon the original with the following key changes:
+## **The Problem**
 
-- **Windows Compatibility:** Corrected an issue where image thumbnails would not display properly on Windows systems.
-- **Improved Grouping Logic:** The smart grouping algorithm now uses original photo names in addition to timestamps for more accurate clustering of related images.
-- **Enhanced AI Accuracy:** The prompt sent to the Google AI has been optimized to improve the accuracy of text extraction from images.
-- **Basic Video File Support:** The application can now process video files by extracting and analyzing a single frame from the beginning of the video.
-- **Improved User Interface:** Added the ability to sort the image table by processing status. The interface will now also display specific error messages from the AI API if a request fails.
-- **Simplified Pattern Management:** Introduced a more straightforward way to manage and validate the sample code patterns used for OCR. For more details, please see [**Easy Pattern Management**](https://www.google.com/search?q=EASY_PATTERN_MANAGEMENT.md).
-- **Clearer Documentation for New Codes:** Added a dedicated guide for developers or users who need to add new sample code formats. See [**Adding New Sample Codes**](https://www.google.com/search?q=ADDING_NEW_SAMPLE_CODES.md).
-    
-## Known Issues
+Field researchers often capture thousands of photos (e.g., IMG\_1234.jpg) during lead testing. Each photo containing a handwritten sample code (like MWI.1.2.15.7B.12.8) needs to be identified and renamed. Manually opening, reading, and renaming these photos can take 30-60 seconds per image, translating to **20-40 hours** for 2,000 samples. Additionally, photos without visible codes need manual association with their corresponding coded sample.
 
-This is a work in progress, and there are some known bugs to be aware of:
+## **The Solution**
 
-- **HEIC File Conversion:** The application does not automatically convert HEIC files. These files must be converted to JPG or PNG format before being uploaded. Manual preprocessing is a current workaround.
-- **Incomplete Image Export:** In some cases, the final exported ZIP file may not contain all the renamed image files due to a process ending prematurely. The generated metadata file can be used to manually rename the files in post-processing as a workaround.
-- **Large Batch Processing:** The application may become unstable or crash when processing a very large number of images (e.g., 5,000+) in a single session. It's recommended to work with smaller batches.
+This project provides a streamlined workflow combining Google Colab notebooks and a local web application to automate the renaming and organization process:
 
-## Colab Notebooks
-1. Image Ingestion and Conversion (copy_folder.ipynb)
-Purpose: This script is the first step in the pipeline. Its job is to ingest all raw images from various sources and standardize them into a consistent format.
+1. **Initial Processing (Colab):** A notebook prepares images, converting formats like HEIC to JPEG.  
+2. **AI Analysis & Grouping (Web App):** A local web application uses Google's Gemini AI to read handwritten codes, automatically groups related photos (even those without codes), and allows for quick manual review.  
+3. **Final Renaming & Analysis (Colab):** Additional notebooks use the application's output to perform final renaming based on groups and generate descriptions for entire item sets.
 
-Process:
+**Result:** What previously took days can now be accomplished in minutes, significantly reducing manual effort and potential errors.
 
-Input: Reads all files from the plastic_foodware/All photos directory.
+## **Features**
 
-Action: It automatically detects image types. Any Apple-native HEIC (.heic) images are converted to the standard JPEG (.jpeg) format. All other files (like .jpg, .png) are copied directly.
+* **Multi-Stage Workflow:** Combines Colab for pre/post-processing and a local web app for AI analysis and review.  
+* **HEIC Conversion:** Initial Colab step converts HEIC images to JPEG.  
+* **AI-Powered OCR:** Uses Google Gemini Flash Vision API via the web app to read handwritten sample codes.  
+* **Smart Grouping:** Web app intelligently groups photos without visible labels based on time proximity, object color, and description similarity.  
+* **Efficient Review Interface:** Web app provides a spreadsheet-like table with keyboard shortcuts for rapid review and correction.  
+* **Batch Renaming:** Final Colab step renames files systematically based on group assignments (e.g., GROUP\_ID\_1.jpg, GROUP\_ID\_2.jpg).  
+* **Group Description Generation:** Final Colab step uses Gemini to analyze all images within a group and generate a consolidated description.  
+* **Local Processing:** Web app runs locally, ensuring photo privacy (only previews sent to AI).  
+* **Simplified Pattern Management:** Easy configuration for adding new sample code formats (See [EASY\_PATTERN\_MANAGEMENT.md](http://docs.google.com/EASY_PATTERN_MANAGEMENT.md) and [ADDING\_NEW\_SAMPLE\_CODES.md](http://docs.google.com/ADDING_NEW_SAMPLE_CODES.md)).
 
-Output: All processed and standardized images are saved in the plastic_foodware/plastic_foodware_input folder, which serves as the input for the next step.
+## **Workflow Overview**
 
-2. Image Grouping and Renaming (rename_photos.ipynb)
-Purpose: This script is the second step, designed to organize the standardized images using a master metadata file. It renames the images based on the "group" they belong to (i.e., multiple photos of the same item).
+This repository uses a combination of Google Colab notebooks and a local web application.
 
-Process:
+### **Stage 1: Image Preparation (Google Colab)**
 
-Input: Reads the standardized images from plastic_foodware/plastic_foodware_input and a master plastic_foodware/metadata.csv file.
+1. **Upload Raw Photos:** Place your original photos (including HEIC, JPG, PNG, etc.) into a designated folder in your Google Drive (e.g., .../lera/plastic\_foodware/All photos).  
+2. **Run copy\_folder.ipynb:**  
+   * **Purpose:** Ingests raw images, converts HEIC files to JPEG, and copies all resulting images (JPEG, PNG, etc.) to a standardized input folder.  
+   * **Input:** Reads from the raw photos folder specified in the notebook (e.g., INPUT\_SUBDIR).  
+   * **Output:** Saves standardized images to the folder specified as OUTPUT\_SUBDIR (e.g., .../lera/plastic\_foodware/plastic\_foodware\_input). This folder will be used by the web application later.  
+3. **Download as ZIP:** Download the *contents* of the OUTPUT\_SUBDIR folder (the standardized images) as a ZIP file to your local computer.
 
-Action: It looks up each image in the metadata.csv to find its assigned Group. It then generates a new, systematic filename for each image, such as BFA.1.0_1.jpg, BFA.1.0_2.jpg, etc., where BFA.1.0 is the group ID and _1, _2 are incrementing counters.
+### **Stage 2: AI Analysis & Manual Review (Local Web App)**
 
-Output: The script copies all images to the plastic_foodware/plastic_foodware_output directory with their new filenames. It also saves an updated metadata.csv (which now includes the new filenames) into this same output folder.
+4. **Install & Run the Web App:** Follow the [Quick Start](#bookmark=id.8fxrr6adgo3g) instructions below to set up and run the local Node.js application.  
+5. **Upload ZIP to Web App:** Drag and drop the ZIP file (downloaded in step 3\) into the web application's upload area.  
+6. **Automatic Processing:** The app extracts the images, sends previews to Google Gemini AI for code extraction/description/color analysis, and performs smart grouping for images without codes. Progress is shown in real-time.  
+7. **Review & Correct:**  
+   * Use the spreadsheet-like interface to review the AI's results.  
+   * Correct any misidentified codes or incorrect group assignments using inline editing or keyboard shortcuts (Press F1 for help).  
+   * Ensure all items are correctly grouped.  
+8. **Export Metadata:** Once satisfied, click the "Export" button in the web app. This generates and downloads a ZIP file containing only metadata (metadata.csv and export-summary.json).
 
-3. AI-Powered Item Description (grouped_img_desc.ipynb)
-Purpose: This is the final analysis step. It uses the Gemini 2.0 Flash multimodal model to look at all the photos for each item group and generate a single, consolidated description.
+### **Stage 3: Final Renaming & Group Analysis (Google Colab)**
 
-Process:
+9. **Upload Metadata:** Upload the metadata.csv file (from the export ZIP in step 8\) to the appropriate location in your Google Drive project folder (e.g., overwriting .../lera/plastic\_foodware/metadata.csv if that's what rename\_photos.ipynb expects).  
+10. **Run rename\_photos.ipynb:**  
+    * **Purpose:** Renames the standardized images based on the final group assignments defined in the metadata.csv.  
+    * **Input:** Reads images from the folder created by copy\_folder.ipynb (e.g., .../plastic\_foodware/plastic\_foodware\_input) and the updated metadata.csv.  
+    * **Output:** Copies and renames images into a final output folder (e.g., .../plastic\_foodware/plastic\_foodware\_output), creating names like GROUPID\_1.jpg, GROUPID\_2.jpg. It also saves the final metadata.csv (including new filenames) to this output folder.  
+11. **Run grouped\_img\_desc.ipynb:**  
+    * **Purpose:** Analyzes all images within each group (from the final output folder) using Gemini AI to generate a consolidated description for the item set.  
+    * **Input:** Reads the renamed images from the folder created by rename\_photos.ipynb (e.g., .../plastic\_foodware/plastic\_foodware\_output).  
+    * **Output:** Saves a new CSV file (output.csv by default) in the same folder, containing the AI-generated descriptions for each group ID.
 
-Input: Reads the systematically named images from the plastic_foodware/plastic_foodware_output folder.
+## **Quick Start (Local Web App \- 5 Minutes)**
 
-Action: The script automatically bundles the images by their group prefix (e.g., all photos starting with BFA.1.0_). It sends this entire group of images to the Gemini model in a single request. The AI analyzes all photos for that item to extract key details based on a specific JSON schema (e.g., brand, materials_specific, colours, item_description).
+These steps are only for **Stage 2** of the workflow.
 
-Output: The script collects the AI-generated JSON response for every group and saves them as a single, structured output.csv file in the plastic_foodware/plastic_foodware_output directory. This file is the final dataset, linking each item group to its detailed description.
+### **Step 1: Install Node.js (If not already installed)**
 
+* **Mac/Linux:** Use a version manager like fnm or nvm (fnm install 18, fnm use 18).  
+* **Windows:** Download the "LTS" version from [nodejs.org](https://nodejs.org/) and run the installer.
 
-## Suggested Next Steps
-- **Migrate Entire Project to Google Colab:** Could be achived in google colab so we dont have to transfer files and zip folders
-- **Soft-code the ID Format:** Allow the user to input the ID format (e.g. using Regex) when choosing the folder. This affects two parts of the code - 1) The prompt that is fed to the LLM API, influencing how likely it is to pick the correct piece of text and transcribe it correctly. 2) The ID Checker, which takes the ID returned from the LLM and compares it to the Regex - if it does not match it is just highlighted to the user, not removed.
+### **Step 2: Clone or Download This Repository**
 
-## The Problem This Solves (Original)
-
-**Before:** Field researchers have thousands of photos named `IMG_1234.jpg`, `IMG_1235.jpg`, etc. Each one needs to be manually opened, the handwritten sample code read if it existed, and the file renamed – taking 30-60 seconds per photo. For 2,000 samples, that's **20-40 hours of mind-numbing work**. If there was no code in the file, it needed to be manually associated with another object/image that did have a code.
-
-**After:** Drop your camera folder into the app, grab coffee, come back to perfectly renamed files like `MWI.1.2.15.7B.12.8.jpg`. What used to take days now takes minutes.
-
-### How It Works:
-
-1. **Drag your photo folder** (or ZIP file) into the web app
-2. **Google's AI reads each handwritten label** and extracts the sample code
-3. **Smart grouping** finds photos without clear labels and groups them with similar ones
-4. **Quick review interface** lets you fix any mistakes with Excel-like keyboard shortcuts
-5. **Export** your perfectly organized collection
-
-## Quick Start (5 Minutes)
-
-### Step 1: Install Node.js (1 minute)
-
-Node.js is like the "engine" that runs the app on your computer.
-
-**For Mac/Linux users:**
-
-```
-# Copy and paste this into Terminal
-curl -fsSL https://fnm.vercel.app/install | bash
-fnm install 18
-fnm use 18
-
-```
-
-**For Windows users:**
-
-1. Go to [nodejs.org](https://nodejs.org/)
-2. Download the "LTS" version (the green button)
-3. Run the installer and click "Next" through everything
-
-### Step 2: Download the App (30 seconds)
-
-```
-# Copy and paste this into Terminal (Mac/Linux) or Command Prompt (Windows)
-git clone https://github.com/raccoman-data/ocr-auto-label.git
+\# Using Git  
+git clone \[https://github.com/raccoman-data/ocr-auto-label.git\](https://github.com/raccoman-data/ocr-auto-label.git)  
 cd ocr-auto-label
 
-```
+\# Or download ZIP and unzip
 
-**Don't have git?** [Click here to download as ZIP](https://www.google.com/search?q=https://github.com/raccoman-data/ocr-auto-label/archive/refs/heads/main.zip), then unzip it.
+### **Step 3: Install Dependencies**
 
-### Step 3: Install App Dependencies (2 minutes)
-
-```
-# This downloads all the code libraries the app needs
+\# Run this in the root ocr-auto-label directory  
 npm run install:all
 
-```
+### **Step 4: Get Google AI API Key**
 
-### Step 4: Get Your AI Key (1 minute)
+1. Go to [Google AI Studio](https://aistudio.google.com/).  
+2. Click **"Get API Key"** \> **"Create API Key"** \> **"Create API key in new project"**.  
+3. Copy the key (starts with AIza...).
 
-The app uses Google's AI to read the handwritten codes. You need a free API key:
+### **Step 5: Configure API Key**
 
-1. Go to [Google AI Studio](https://aistudio.google.com/)
-2. Click **"Get API Key"** in the top right
-3. Click **"Create API Key"** → **"Create API key in new project"**
-4. Copy the long string that appears (starts with `AIza...`)
+Create a file named .env inside the backend folder and add your key:
 
-### Step 5: Add Your Key to the App (30 seconds)
+GEMINI\_API\_KEY=YOUR\_KEY\_HERE
 
-Create a file called `.env` in the `backend` folder with your key:
+*(Replace YOUR\_KEY\_HERE with the key you copied)*
 
-**Mac/Linux:**
+### **Step 6: Start the App**
 
-```
-echo "GEMINI_API_KEY=YOUR_KEY_HERE" > backend/.env
-
-```
-
-**Windows (Command Prompt):**
-
-```
-echo GEMINI_API_KEY=YOUR_KEY_HERE > backend\.env
-
-```
-
-**Or manually:** Create a file called `.env` in the `backend` folder and put this inside:
-
-```
-GEMINI_API_KEY=YOUR_KEY_HERE
-
-```
-
-### Step 6: Start the App (10 seconds)
-
-```
 npm start
 
-```
+The application will open in your browser, usually at http://localhost:3000. You can now proceed with **Step 5** of the [Workflow Overview](#bookmark=id.fugiyjile3hk).
 
-That's it! The app will open in your browser at `http://localhost:3000`
+## **Changes in This Fork**
 
-## How to Use the App
+This version builds upon the original with:
 
-### Uploading Photos
+* **Windows Compatibility:** Fixes for thumbnail display.  
+* **Improved Grouping Logic:** Uses original names alongside timestamps.  
+* **Enhanced AI Prompt:** Optimized for better text extraction accuracy.  
+* **Video File Support:** Extracts and analyzes the first frame.  
+* **UI Improvements:** Sort by status, display API error messages.  
+* **Simplified Pattern Management:** Centralized configuration for sample code formats (see linked .md files).
 
-1. **Drag and drop** your photo folder or ZIP file into the web app.
-2. **Supported formats:** JPEG, PNG, ZIP archives (up to 5GB), and video files (first frame only). Note: HEIC files are not currently supported and must be converted first.
-3. **Photos appear instantly** in the table, sorted by when they were taken.
+## **Known Issues & Future Improvements**
 
-### Understanding the Status Icons
+### **Known Issues**
 
-Each photo has status indicators that show processing progress:
+* **Manual HEIC Conversion:** The *local web app* doesn't convert HEIC; rely on the initial Colab step (copy\_folder.ipynb) for this.  
+* **Incomplete Image Export (Web App):** The *web app's* export focuses on *metadata*. Final image renaming happens in Colab (rename\_photos.ipynb). Ensure the Colab step completes successfully.  
+* **Large Batch Stability:** Processing very large numbers of images (5,000+) in a single web app session may cause instability. Process in manageable batches if needed.
 
-- **Extracting:** AI is reading the handwritten code.
-- **Grouping:** App is finding similar photos to group together.
-- **Complete:** Ready for export.
-- **Needs Attention:** Couldn't read the code clearly or an API error occurred.
+### **Suggested Future Improvements**
 
-### Reviewing and Fixing
+* **Migrate Entire Workflow to Google Colab:** Consolidate all steps (preparation, AI analysis, review, renaming) into Colab notebooks to eliminate file transfers between Drive and local machine.  
+* **User-Defined ID Formats:** Allow users to input the expected sample code format (e.g., using Regex) via the UI or notebook parameters. This would dynamically update the AI prompt and validation logic, making the tool adaptable to different projects without code changes.
 
-- Click the **Status** column header to sort items, making it easier to find those that need attention.
-- **Arrow keys** to navigate like Excel.
-- **Enter** to edit the selected cell.
-- **G** to quickly edit the group name.
-- **N** to quickly edit the new filename.
-- **F1** to see all keyboard shortcuts.
+## **Colab Notebook Details**
 
-### Exporting Your Results
+Located in the colab\_notebooks directory:
 
-1. Click **"Export"** when you're happy with the results.
-2. Choose **"Download ZIP"** to get a compressed file.
-3. Or **"Save to Folder"** to create an organized folder on your computer.
+1. **copy\_folder.ipynb:** (Stage 1\) Prepares images. Converts HEIC to JPEG, copies others. Creates the input dataset for the web app.  
+2. **rename\_photos.ipynb:** (Stage 3\) Renames images. Uses the web app's exported metadata.csv to rename files systematically based on final groups (e.g., GROUPID\_1.jpg). Creates the final image output folder.  
+3. **grouped\_img\_desc.ipynb:** (Stage 3\) Analyzes groups. Sends all images for each group ID (from the final output folder) to Gemini to generate a consolidated item description. Outputs a final output.csv.
 
-## Troubleshooting
+## **Technical Details**
 
-### "Command not found" or "npm not recognized"
+* **Frontend:** React 18, Vite, TypeScript, Zustand, Radix UI, Tailwind CSS  
+* **Backend:** Node.js, Express, Prisma, SQLite, Sharp (image processing)  
+* **AI:** Google Generative AI SDK (Gemini Flash)  
+* **Preprocessing:** Python (in Google Colab), pyheif, Pillow  
+* **Postprocessing:** Python (in Google Colab), pandas
 
-- **Mac/Linux:** Restart Terminal and try `node --version`.
-- **Windows:** Restart Command Prompt and try `node --version`.
-- If still not working, reinstall Node.js from [nodejs.org](https://nodejs.org/).
+## **License**
 
-### "Permission denied" errors (Mac/Linux)
+MIT License \- See original repository for details.
 
-```
-sudo chown -R $(whoami) ~/.npm
+## **Appendix: Additional Information (from Original README)**
 
-```
+### **How to Use the App (Local Web App \- Stage 2 Focus)**
 
-### "Python not found" errors (Windows)
+#### **Uploading Photos**
 
-```
-# Install Python and Visual Studio Build Tools
-npm install --global windows-build-tools
+1. **Drag and drop** the ZIP file (containing standardized images from Colab Stage 1\) into the web app.  
+2. **Supported formats (within ZIP):** JPEG, PNG. The app also supports video files (first frame only). *Note: HEIC files should have been converted in Colab Stage 1\.*  
+3. **Photos appear** in the table, typically sorted by capture time.
 
-```
+#### **Understanding the Status Icons**
 
-### App won't start or crashes
+Each photo has status indicators showing processing progress:
 
-1. **Check your API key** in `backend/.env` - it should start with `AIza`.
-2. **Restart the app:** Press `Ctrl+C` to stop, then `npm start` again.
-3. **Clear the cache:** Delete the `node_modules` folders and run `npm run install:all` again.
+* **Extracting:** AI is reading the handwritten code.  
+* **Grouping:** App is finding similar photos to group together.  
+* **Complete / Extracted / Grouped:** Ready for review/export.  
+* **Needs Attention / Invalid Group / Ungrouped:** May require manual review.
 
-### Photos aren't being processed
+#### **Reviewing and Fixing**
 
-- **Check your internet connection** - the app needs internet to use Google's AI.
-- **Verify your API key** is working at [Google AI Studio](https://aistudio.google.com/).
-- **Check the console** for error messages (press F12 in your browser).
+* Click column headers (like **Status**) to sort items needing attention.  
+* **Arrow keys** to navigate like Excel.  
+* **Enter** to edit the selected cell (e.g., New Name, Group).  
+* **G** to quickly edit the group name for selected images.  
+* **N** to quickly edit the new filename (less common with Colab renaming).  
+* **F1** (or Help button) to see all keyboard shortcuts.
 
-### "Rate limit exceeded" errors
+#### **Exporting Metadata (End of Stage 2\)**
 
-- **Wait a few minutes** - Google limits how many requests you can make per minute.
-- **Reduce batch size** - process fewer photos at once.
+1. Click **"Export"** when corrections are complete.  
+2. This downloads a ZIP containing metadata.csv needed for Colab Stage 3\.
 
-## Tips for Best Results
+### **Troubleshooting (Local Web App)**
 
-### Photo Quality
+* **"Command not found" or "npm not recognized":** Ensure Node.js is installed correctly and PATH is set. Restart Terminal/Command Prompt.  
+* **"Permission denied" errors (Mac/Linux):** Try sudo chown \-R $(whoami) \~/.npm.  
+* **App won't start:**  
+  * Check backend/.env for a valid GEMINI\_API\_KEY.  
+  * Restart the app (Ctrl+C, then npm start).  
+  * Clear cache: delete node\_modules folders, run npm run install:all.  
+* **Photos aren't processing:**  
+  * Check internet connection (required for AI).  
+  * Verify API key at [Google AI Studio](https://aistudio.google.com/).  
+  * Check browser console (F12) and terminal for errors.  
+* **"Rate limit exceeded" errors:** Wait a few minutes; Google limits requests. Process smaller batches if issues persist.
 
-- **Well-lit photos** work best.
-- **Avoid blurry images** - the AI needs to read the handwriting clearly.
-- **Straight angles** help - try to avoid tilted or angled shots.
+### **Tips for Best Results (Local Web App AI)**
 
-### Batch Processing
+* **Photo Quality:** Well-lit, non-blurry photos taken at straight angles work best for AI.  
+* **Batch Processing:** Start with smaller batches (50-100) to test. Check results periodically.
 
-- **Start small** - try 50-100 photos first to test your setup.
-- **Group similar photos** - photos taken at the same time/location work better.
-- **Check periodically** - review results every few hundred photos.
+### **Keyboard Shortcuts (Press F1 in the app)**
 
-### Keyboard Shortcuts (Press F1 in the app)
-
-- **Arrow keys:** Navigate table
-- **Enter:** Edit selected cell
-- **Escape:** Cancel editing
-- **Ctrl+A:** Select all
-- **G:** Edit group name
-- **N:** Edit new filename
-- **Delete:** Remove selected photos
-
-## Cost Information
-
-### Actual Google AI Usage & Costs
-
-Based on analysis of the app's implementation with Gemini Flash:
-
-**Per Photo Breakdown:**
-
-- **Input tokens:** ~2,790 tokens (1,290 for image + 1,500 for comprehensive prompt)
-- **Output tokens:** ~175 tokens (structured JSON response with code, colors, description)
-- **Cost per photo:** ~$0.349 per 1,000 photos = **$0.000349 per photo**
-
-**Real-World Cost Examples:**
-
-- **100 photos:** ~$0.035 (3.5 cents)
-- **500 photos:** ~$0.175 (17.5 cents)
-- **1,000 photos:** ~$0.35 (35 cents)
-- **2,000 photos:** ~$0.70 (70 cents)
-- **5,000 photos:** ~$1.75
-
-**Why It's So Affordable:**
-
-- Uses efficient **Gemini Flash** (not the more expensive Pro model).
-- Only processes each photo **once** - no retries unless you specifically request them.
-- Optimized prompt design minimizes token usage while maintaining accuracy.
-
-### Free Tier Benefits
-
-- **$300 Google Cloud credit** for new users covers ~860,000 photos.
-- **No hidden costs** - only pay for successful AI processing.
-- **Transparent billing** - see exact usage in Google Cloud Console.
-
-### No Hidden Costs
-
-- **App is free** - open source, no subscription fees.
-- **Runs locally** - no cloud storage or hosting fees.
-- **One-time setup** - no recurring payments.
-- **Only pay Google** for AI processing (and only when you use it).
-
-## Privacy & Security
-
-### Your Photos Stay Private
-
-- **Processed locally** on your computer.
-- **Only tiny previews** (100KB) sent to Google for AI processing.
-- **Original photos never leave** your computer.
-- **No cloud storage** - everything stays on your device.
-
-### Data Storage
-
-- **Temporary files** stored in your system's temp folder.
-- **Automatically cleaned up** when you restart your computer.
-- **SQLite database** keeps track of your work (stored locally).
-
-## Getting Help
-
-### If You're Stuck
-
-1. **Check this README** - most issues are covered above.
-2. **Look at the browser console** - press F12 to see error messages.
-3. **Restart everything** - close the app, run `npm start` again.
-4. **Create an issue** on GitHub with your error message.
-
-### What to Include When Asking for Help
-
-- **Your operating system** (Windows 10, macOS Monterey, etc.)
-- **Node.js version** (run `node --version`)
-- **Error message** (copy and paste the exact text)
-- **What you were doing** when the error occurred
-- **Screenshots** if there's a visual problem
-
-## Understanding the Technology
-
-### How It Works (Simple Version)
-
-1. **Upload:** Your photos are copied to a secure temp folder.
-2. **Analysis:** AI reads each photo and extracts the handwritten code.
-3. **Grouping:** Smart algorithm finds similar photos based on colors, descriptions, and timing.
-4. **Review:** You can fix any mistakes using the spreadsheet-like interface.
-5. **Export:** Renamed photos are packaged for download.
-
-### Sample Code Patterns
-
-The app was specifically trained to recognize leadresearch.org's sample coding system:
-
-- **Malawi samples:** `MWI.1.2.15.7B.12.8` or `MWI.0.1.4.10.15.7`
-- **Kenya samples:** `KEN.0.2.3.5.8.11`
-- **Strict validation:** Prevents false matches and catches common handwriting mistakes (like "D" vs "0").
-
-### File Storage
-
-- **Uploads:** `~/AppData/Local/Temp/ocr-auto-label/` (Windows) or `/tmp/ocr-auto-label/` (Mac/Linux)
-- **Database:** `backend/prisma/dev.db` (SQLite file)
-- **Thumbnails:** Auto-generated for fast preview
-
-## System Requirements
-
-### Minimum Requirements
-
-- **Operating System:** Windows 10, macOS 10.14, or Ubuntu 18.04+
-- **RAM:** 4GB (8GB recommended for large batches)
-- **Storage:** 2GB free space (plus space for your photos)
-- **Internet:** Required for AI processing
-
-### Recommended Setup
-
-- **RAM:** 8GB+ for processing 1000+ photos
-- **CPU:** Multi-core processor for faster processing
-- **SSD:** Faster file operations
-- **Stable internet:** For reliable AI processing
-
-## Technical Details (For Developers)
-
-### Project Structure
-
-```
-ocr-auto-label/
-├── frontend/          # React + TypeScript + Vite
-│   ├── src/components/    # UI components
-│   ├── src/stores/        # Zustand state management
-│   └── src/types/         # TypeScript definitions
-├── backend/           # Node.js + Express + Prisma
-│   ├── src/routes/        # API endpoints
-│   ├── src/services/      # Business logic
-│   └── prisma/            # Database schema
-└── package.json       # Workspace configuration
-
-```
-
-### Key Technologies
-
-- **Frontend:** React 18, Vite, TypeScript, Zustand, Radix UI, Tailwind CSS
-- **Backend:** Node.js, Express, Prisma, SQLite, Sharp (image processing)
-- **AI:** Google Generative AI (Gemini Flash)
-- **Deployment:** Local development with production build support
-
-### API Endpoints
-
-- `POST /api/upload` - Upload photos and ZIP files
-- `GET /api/images` - List all processed images
-- `PUT /api/images/:id` - Update image metadata
-- `POST /api/export` - Generate export ZIP
-- `GET /api/gemini-updates` - Server-sent events for real-time updates
-
-## License
-
-**MIT License** - Free for personal and commercial use. No attribution required, but appreciated!
-
-*Need help? Create an issue on GitHub or check the troubleshooting section above.*
+* **Arrow keys:** Navigate table  
+* **Enter:** Edit selected cell  
+* **Escape:** Cancel editing / Clear selection  
+* **Shift \+ Arrow/Click:** Select range  
+* **Ctrl/Cmd \+ Click:** Add/remove item from selection  
+* **Ctrl/Cmd \+ A:** Select all  
+* **Ctrl/Cmd \+ F:** Focus search bar  
+* **G / Ctrl+G:** Edit group name(s)  
+* **N:** Edit new filename  
+* **Ctrl/Cmd \+ C:** Copy group name from selected  
+* **Ctrl/Cmd \+ V:** Paste copied group name to selected  
+* **Delete / Backspace:** Clear group name(s) for selected  
+* **Ctrl/Cmd \+ Shift \+ Delete/Backspace:** Delete selected image(s)
+
+### **Cost Information (Google AI Usage)**
+
+Based on Gemini Flash analysis:
+
+* **Cost per photo:** \~$0.000349  
+* **1,000 photos:** \~$0.35  
+* **5,000 photos:** \~$1.75  
+* Uses efficient **Gemini Flash**.  
+* **Free Tier:** Google Cloud offers credits for new users.  
+* App runs locally; no hosting/storage fees.
+
+### **Privacy & Security**
+
+* Web app processes photos **locally**.  
+* Only compressed image previews are sent to Google AI.  
+* Original photos remain on your computer during web app use.  
+* Temporary files stored locally (backend/prisma/dev.db, OS temp dir).
+
+### **Getting Help**
+
+1. Review this README and Troubleshooting section.  
+2. Check browser console (F12) and terminal running the app for errors.  
+3. Restart the application.  
+4. If unresolved, create an issue on the GitHub repository, including:  
+   * Operating System & Node.js version (node \--version)  
+   * Exact error message  
+   * Steps taken  
+   * Screenshots (if applicable)
+
+### **Understanding the Technology (Local Web App)**
+
+* **Simple Version:** Upload ZIP \-\> AI reads codes \-\> Smart grouping \-\> Manual review \-\> Export metadata CSV.  
+* **Sample Code Patterns:** Trained for leadresearch.org formats (MWI/KEN/etc.), strictly validated. See backend/src/lib/sampleCodePatterns.ts.  
+* **File Storage (Local):**  
+  * Database: backend/prisma/dev.db (SQLite)  
+  * Temporary Files/Uploads/Thumbnails: In OS temp directory (e.g., /tmp/ocr-auto-label/ or C:\\Users\\...\\AppData\\Local\\Temp\\ocr-auto-label\\)
+
+### **System Requirements (Local Web App)**
+
+* **OS:** Windows 10+, macOS 10.14+, Ubuntu 18.04+  
+* **RAM:** 4GB (8GB+ recommended for large batches)  
+* **Storage:** 2GB free \+ space for extracted photos  
+* **Internet:** Required for AI processing stage
